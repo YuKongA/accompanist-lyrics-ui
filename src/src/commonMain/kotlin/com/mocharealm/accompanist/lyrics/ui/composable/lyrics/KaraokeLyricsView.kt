@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -54,7 +53,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -88,6 +86,22 @@ fun KaraokeLyricsView(
         fontFamily = SFPro(),
         textMotion = TextMotion.Animated,
     ),
+    textColor: Color = Color.White,
+    verticalFadeMask: Modifier = Modifier.drawWithCache {
+        onDrawWithContent {
+            drawContent()
+            drawRect(
+                Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    0.1f to Color.White,
+                    0.5f to Color.White,
+                    1f to Color.Transparent
+                ),
+                blendMode = BlendMode.DstIn
+            )
+        }
+    },
+    breathingDotsColor: Color = Color.White
 ) {
     val currentTimeMs by rememberUpdatedState(currentPosition.toInt())
 
@@ -192,20 +206,7 @@ fun KaraokeLyricsView(
             state = listState,
             modifier = modifier
                 .fillMaxSize()
-                .drawWithCache {
-                    onDrawWithContent {
-                        drawContent()
-                        drawRect(
-                            Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                0.1f to Color.White,
-                                0.5f to Color.White,
-                                1f to Color.Transparent
-                            ),
-                            blendMode = BlendMode.DstIn
-                        )
-                    }
-                },
+                .then(verticalFadeMask),
             contentPadding = PaddingValues(vertical = 300.dp)
         ) {
             item(key = "intro-dots") {
@@ -268,6 +269,7 @@ fun KaraokeLyricsView(
                                     ),
                                 normalLineTextStyle = normalLineTextStyle,
                                 accompanimentLineTextStyle = accompanimentLineTextStyle,
+                                activeColor = textColor
                             )
                         } else {
                             val isCurrentFocusLine by rememberUpdatedState(
@@ -309,6 +311,7 @@ fun KaraokeLyricsView(
                                         .fillMaxWidth(if (isDuoView) 0.85f else 1f).alpha(0.8f),
                                     normalLineTextStyle = normalLineTextStyle,
                                     accompanimentLineTextStyle = accompanimentLineTextStyle,
+                                    activeColor = textColor
                                 )
                             }
                         }
@@ -352,9 +355,13 @@ fun KaraokeLyricsView(
                                     .padding(vertical = 8.dp, horizontal = 16.dp)
                             ) {
                                 //Text("Start: ${line.start} ms\nEnd:${line.end} ms", color = Color.White.copy(0.6f))
-                                Text(text = line.content, style = normalLineTextStyle.copy(lineHeight = 1.2f.em), color = Color.White)
+                                Text(
+                                    text = line.content,
+                                    style = normalLineTextStyle.copy(lineHeight = 1.2f.em),
+                                    color = textColor
+                                )
                                 line.translation?.let {
-                                    Text(it, color = Color.White.copy(0.6f))
+                                    Text(it, color = textColor.copy(0.6f))
                                 }
                             }
                         }
@@ -372,7 +379,8 @@ fun KaraokeLyricsView(
                         alignment = (nextLine as? KaraokeLine)?.alignment ?: KaraokeAlignment.Start,
                         startTimeMs = line.end,
                         endTimeMs = nextLine!!.start,
-                        currentTimeMs = currentTimeMs
+                        currentTimeMs = currentTimeMs,
+                        breathingDotsColor = breathingDotsColor
                     )
                 }
             }
