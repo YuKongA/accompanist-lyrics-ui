@@ -17,7 +17,7 @@ import com.mocharealm.accompanist.sample.ui.utils.composable.CompatBlurImage
 @Stable
 data class BackgroundVisualState(
     val bitmap: ImageBitmap?,
-    val isBright: Boolean
+    val luminance: Float
 )
 
 @Composable
@@ -26,8 +26,8 @@ fun FlowingLightBackground(
     modifier: Modifier = Modifier
 ) {
     if (state.bitmap != null) {
-        val colorFilter = if (state.isBright) {
-            ColorFilter.tint(Color.Black.copy(alpha = 0.1f), BlendMode.Darken)
+        val colorFilter = if (state.luminance > 0.5f) {
+            ColorFilter.tint(Color.Black.copy(alpha = state.luminance - 0.5f), BlendMode.Darken)
         } else {
             null
         }
@@ -68,8 +68,7 @@ fun FlowingLightBackground(
                     .graphicsLayer {
 //                        rotationZ = rotation3
                         translationX = 50f
-                    }
-                ,
+                    },
                 blurRadius = 50.dp
             )
         }

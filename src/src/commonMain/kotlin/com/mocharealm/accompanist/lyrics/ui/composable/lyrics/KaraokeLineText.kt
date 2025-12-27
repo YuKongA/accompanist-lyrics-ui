@@ -1,5 +1,6 @@
 package com.mocharealm.accompanist.lyrics.ui.composable.lyrics
 
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
@@ -56,6 +56,7 @@ import com.mocharealm.accompanist.lyrics.ui.utils.easing.DipAndRise
 import com.mocharealm.accompanist.lyrics.ui.utils.easing.Swell
 import com.mocharealm.accompanist.lyrics.ui.utils.isPunctuation
 import com.mocharealm.accompanist.lyrics.ui.utils.isPureCjk
+import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
@@ -71,8 +72,7 @@ data class WordAnimationInfo(
 
 
 data class WrappedLine(
-    val syllables: List<SyllableLayout>,
-    val totalWidth: Float
+    val syllables: List<SyllableLayout>, val totalWidth: Float
 )
 
 
@@ -115,10 +115,8 @@ private fun measureSyllablesAndDetermineAnimation(
             0f
         }
 
-        val useAwesomeAnimation = perCharDuration > fastCharAnimationThresholdMs &&
-                wordDuration >= 1000 &&
-                !wordContent.isPureCjk() &&
-                !isAccompanimentLine
+        val useAwesomeAnimation =
+            perCharDuration > fastCharAnimationThresholdMs && wordDuration >= 1000 && !wordContent.isPureCjk() && !isAccompanimentLine
 
         word.map { syllable ->
             SyllableLayout(
@@ -216,10 +214,7 @@ private fun calculateBalancedLines(
  * output "complete" SyllableLayout list.
  */
 private fun calculateStaticLineLayout(
-    wrappedLines: List<WrappedLine>,
-    lineAlignment: Alignment,
-    canvasWidth: Float,
-    lineHeight: Float
+    wrappedLines: List<WrappedLine>, lineAlignment: Alignment, canvasWidth: Float, lineHeight: Float
 ): List<List<SyllableLayout>> {
     val layoutsByWord = mutableMapOf<Int, MutableList<SyllableLayout>>()
 
@@ -251,8 +246,7 @@ private fun calculateStaticLineLayout(
             animInfoByWord[wordId] = WordAnimationInfo(
                 wordStartTime = layouts.minOf { it.syllable.start }.toLong(),
                 wordEndTime = layouts.maxOf { it.syllable.end }.toLong(),
-                wordContent = layouts.joinToString("") { it.syllable.content }
-            )
+                wordContent = layouts.joinToString("") { it.syllable.content })
             var runningCharOffset = 0
             layouts.forEach { layout ->
                 charOffsetsBySyllable[layout] = runningCharOffset
@@ -301,8 +295,16 @@ private fun createLineGradientBrush(
     val lastSyllableEnd = lineLayout.last().syllable.end
 
     val lineProgress = run {
-        if (currentTimeMs <= firstSyllableStart) return Brush.horizontalGradient(listOf(inactiveColor, inactiveColor))
-        if (currentTimeMs >= lastSyllableEnd) return Brush.horizontalGradient(listOf(activeColor, activeColor))
+        if (currentTimeMs <= firstSyllableStart) return Brush.horizontalGradient(
+            listOf(
+                inactiveColor, inactiveColor
+            )
+        )
+        if (currentTimeMs >= lastSyllableEnd) return Brush.horizontalGradient(
+            listOf(
+                activeColor, activeColor
+            )
+        )
 
         val activeSyllableLayout = lineLayout.find {
             currentTimeMs in it.syllable.start until it.syllable.end
@@ -312,6 +314,7 @@ private fun createLineGradientBrush(
                 val syllableProgress = activeSyllableLayout.syllable.progress(currentTimeMs)
                 activeSyllableLayout.position.x + activeSyllableLayout.width * syllableProgress
             }
+
             else -> {
                 val lastFinished = lineLayout.lastOrNull { currentTimeMs >= it.syllable.end }
                 lastFinished?.let { it.position.x + it.width } ?: 0f
@@ -338,8 +341,7 @@ private fun createLineGradientBrush(
     )
 
     return Brush.horizontalGradient(
-        colorStops = colorStops,
-        endX = totalWidth
+        colorStops = colorStops, endX = totalWidth
     )
 }
 
@@ -390,27 +392,23 @@ fun DrawScope.drawLine(
                             (earliestStartTime + (latestStartTime - earliestStartTime) * charRatio).toLong()
                         val awesomeProgress =
                             ((currentTimeMs - awesomeStartTime).toFloat() / awesomeDuration).coerceIn(
-                                0f,
-                                1f
+                                0f, 1f
                             )
 
                         val floatOffset = 4f * DipAndRise(
                             dip = ((0.5 * (wordAnimInfo.wordDuration - fastCharAnimationThresholdMs * numCharsInWord) / 1000)).coerceIn(
-                                0.0,
-                                0.5
+                                0.0, 0.5
                             )
                         ).transform(1.0f - awesomeProgress)
                         val scale = 1f + Swell(
                             (0.1 * (wordAnimInfo.wordDuration - fastCharAnimationThresholdMs * numCharsInWord) / 1000).coerceIn(
-                                0.0,
-                                0.1
+                                0.0, 0.1
                             )
                         ).transform(awesomeProgress)
                         val yPos = syllableLayout.position.y + floatOffset
                         val xPos =
                             syllableLayout.position.x + syllableLayout.textLayoutResult.getHorizontalPosition(
-                                offset = charIndex,
-                                usePrimaryDirection = true
+                                offset = charIndex, usePrimaryDirection = true
                             )
                         val blurRadius = 10f * Bounce.transform(awesomeProgress)
                         val shadow = Shadow(
@@ -431,13 +429,10 @@ fun DrawScope.drawLine(
                             )
                             if (showDebugRectangles) {
                                 drawRect(
-                                    color = Color.Red,
-                                    topLeft = Offset(xPos, yPos),
-                                    size = Size(
+                                    color = Color.Red, topLeft = Offset(xPos, yPos), size = Size(
                                         charLayoutResult.size.width.toFloat(),
                                         charLayoutResult.size.height.toFloat()
-                                    ),
-                                    style = Stroke(2f)
+                                    ), style = Stroke(2f)
                                 )
                             }
                         }
@@ -461,8 +456,13 @@ fun DrawScope.drawLine(
                         } else {
                             syllableLayout
                         }
-                    val progress = progressSyllable.syllable.progress(currentTimeMs)
-                    val floatOffset = 4f * LinearOutSlowInEasing.transform(1f - progress)
+                    val timeSinceStart = currentTimeMs - progressSyllable.syllable.start
+                    val animationProgress =
+                        (timeSinceStart / (700f * progressSyllable.syllable.duration / 500f))
+                            .coerceIn(0f, 1f)
+                    val floatOffset = 4f * CubicBezierEasing(
+                        0.6f, 0f, 0.2f, 1f
+                    ).transform(1f - animationProgress)
                     val finalPosition =
                         syllableLayout.position.copy(y = syllableLayout.position.y + floatOffset)
                     drawText(
@@ -473,13 +473,10 @@ fun DrawScope.drawLine(
                     )
                     if (showDebugRectangles) {
                         drawRect(
-                            color = Color.Red,
-                            topLeft = finalPosition,
-                            size = Size(
+                            color = Color.Red, topLeft = finalPosition, size = Size(
                                 syllableLayout.textLayoutResult.size.width.toFloat(),
                                 syllableLayout.textLayoutResult.size.height.toFloat()
-                            ),
-                            style = Stroke(2f)
+                            ), style = Stroke(2f)
                         )
                     }
                 }
@@ -513,19 +510,15 @@ fun KaraokeLineText(
     val textMeasurer = rememberTextMeasurer()
 
     val animatedScale by animateFloatAsState(
-        targetValue = if (isFocused) 1f else 0.98f,
-        animationSpec = if (isFocused) {
+        targetValue = if (isFocused) 1f else 0.98f, animationSpec = if (isFocused) {
             androidx.compose.animation.core.tween(
-                durationMillis = 600,
-                easing = LinearOutSlowInEasing
+                durationMillis = 600, easing = LinearOutSlowInEasing
             )
         } else {
             androidx.compose.animation.core.tween(
-                durationMillis = 300,
-                easing = EaseInOut
+                durationMillis = 300, easing = EaseInOut
             )
-        },
-        label = "scale"
+        }, label = "scale"
     )
     val animatedAlpha by animateFloatAsState(
         targetValue = if (!line.isAccompaniment) if (isFocused) 1f else 0.4f else if (isFocused) 0.6f else 0.2f,
@@ -533,24 +526,19 @@ fun KaraokeLineText(
     )
 
     Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+        Modifier.fillMaxWidth().clip(ContinuousRoundedRectangle(8.dp))
             .combinedClickable(
                 onClick = { onLineClicked(line) },
                 onLongClick = { onLinePressed(line) })
     ) {
         Column(
-            modifier
-                .align(if (line.alignment == KaraokeAlignment.End) Alignment.TopEnd else Alignment.TopStart)
-                .padding(vertical = 8.dp, horizontal = 16.dp)
-                .graphicsLayer {
+            modifier.align(if (line.alignment == KaraokeAlignment.End) Alignment.TopEnd else Alignment.TopStart)
+                .padding(vertical = 8.dp, horizontal = 16.dp).graphicsLayer {
                     scaleX = animatedScale
                     scaleY = animatedScale
                     alpha = animatedAlpha
                     transformOrigin = TransformOrigin(
-                        if (line.alignment == KaraokeAlignment.Start) 0f else 1f,
-                        1f
+                        if (line.alignment == KaraokeAlignment.Start) 0f else 1f, 1f
                     )
                 },
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -636,9 +624,7 @@ fun KaraokeLineText(
                 }
                 Canvas(modifier = Modifier.size(result.size.toDpSize())) {
                     drawText(
-                        textLayoutResult = result,
-                        color = textColor,
-                        blendMode = BlendMode.Plus
+                        textLayoutResult = result, color = textColor, blendMode = BlendMode.Plus
                     )
                 }
             }
@@ -647,9 +633,7 @@ fun KaraokeLineText(
 }
 
 private fun trimDisplayLineTrailingSpaces(
-    displayLineSyllables: List<SyllableLayout>,
-    textMeasurer: TextMeasurer,
-    style: TextStyle
+    displayLineSyllables: List<SyllableLayout>, textMeasurer: TextMeasurer, style: TextStyle
 ): WrappedLine {
     if (displayLineSyllables.isEmpty()) {
         return WrappedLine(emptyList(), 0f)

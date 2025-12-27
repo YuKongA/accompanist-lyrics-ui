@@ -28,7 +28,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -52,7 +51,6 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.dp
@@ -66,12 +64,12 @@ import com.mocharealm.accompanist.sample.ic_ellipsis
 import com.mocharealm.accompanist.sample.ui.adaptive.LocalWindowLayoutType
 import com.mocharealm.accompanist.sample.ui.adaptive.WindowLayoutType
 import com.mocharealm.accompanist.sample.ui.composable.ModalScaffold
-import com.mocharealm.accompanist.sample.ui.composable.background.BackgroundVisualState
 import com.mocharealm.accompanist.sample.ui.composable.background.FlowingLightBackground
 import com.mocharealm.accompanist.sample.ui.screen.share.ShareContext
 import com.mocharealm.accompanist.sample.ui.screen.share.ShareScreen
 import com.mocharealm.accompanist.sample.ui.screen.share.ShareViewModel
 import com.mocharealm.accompanist.sample.ui.theme.SFPro
+import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.android.awaitFrame
 import org.jetbrains.compose.resources.painterResource
 import org.koin.compose.viewmodel.koinViewModel
@@ -114,14 +112,10 @@ fun PlayerScreen(
                 ShareScreen(it, shareViewModel = shareViewModel)
             }
         ) {
-            uiState.backgroundState.bitmap?.let { bitmap ->
-                FlowingLightBackground(
-                    state = BackgroundVisualState(
-                        bitmap, uiState.backgroundState.isBright
-                    ),
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            FlowingLightBackground(
+                state = uiState.backgroundState,
+                modifier = Modifier.fillMaxSize()
+            )
 
             when (LocalWindowLayoutType.current) {
                 WindowLayoutType.Phone -> {
@@ -187,11 +181,11 @@ fun MobilePlayerScreen(
                         bitmap,
                         null,
                         Modifier
-                            .clip(RoundedCornerShape(6.dp))
+                            .clip(ContinuousRoundedRectangle(6.dp))
                             .border(
                                 1.dp,
                                 Color.White.copy(0.2f),
-                                RoundedCornerShape(6.dp)
+                                ContinuousRoundedRectangle(6.dp)
                             )
                             .size(60.dp)
                     )
@@ -208,14 +202,20 @@ fun MobilePlayerScreen(
                             textMotion = TextMotion.Animated
                         ),
                         color = Color.White,
-                        modifier = Modifier.basicMarquee(spacing = MarqueeSpacing(20.dp), repeatDelayMillis = 20000)
+                        modifier = Modifier.basicMarquee(
+                            spacing = MarqueeSpacing(20.dp),
+                            repeatDelayMillis = 2000
+                        )
                     )
                     Text(
                         uiState.currentMusicItem?.testTarget?.split(" [")[0] ?: "Unknown",
                         Modifier
                             .alpha(0.6f)
-                            .basicMarquee(spacing = MarqueeSpacing(20.dp), repeatDelayMillis = 20000),
-                        style =  LocalTextStyle.current.copy(
+                            .basicMarquee(
+                                spacing = MarqueeSpacing(20.dp),
+                                repeatDelayMillis = 2000
+                            ),
+                        style = LocalTextStyle.current.copy(
                             textMotion = TextMotion.Animated
                         ),
                         lineHeight = 1.em,
@@ -261,10 +261,7 @@ fun MobilePlayerScreen(
                     val context = ShareContext(
                         lyrics = finalLyrics,
                         initialLine = line as KaraokeLine,
-                        backgroundState = BackgroundVisualState(
-                            bitmap = uiState.backgroundState.bitmap,
-                            isBright = uiState.backgroundState.isBright
-                        )
+                        backgroundState = uiState.backgroundState
                     )
                     shareViewModel.prepareForSharing(context)
                     playerViewModel.onShareRequested()
@@ -322,7 +319,7 @@ fun PadPlayerScreen(
                     uiState.backgroundState.bitmap,
                     null,
                     Modifier
-                        .dropShadow(RoundedCornerShape(12.dp)) {
+                        .dropShadow(ContinuousRoundedRectangle(12.dp)) {
                             radius = 10f
                             color = Color.Black.copy(0.2f)
                             offset = Offset(0f, 16f)
@@ -331,16 +328,16 @@ fun PadPlayerScreen(
                         .border(
                             1.dp,
                             Color.White.copy(0.2f),
-                            RoundedCornerShape(12.dp)
+                            ContinuousRoundedRectangle(12.dp)
                         )
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(ContinuousRoundedRectangle(12.dp))
                         .fillMaxWidth()
                         .aspectRatio(1f)
                 )
             } else {
                 Box(
                     Modifier
-                        .dropShadow(RoundedCornerShape(12.dp)) {
+                        .dropShadow(ContinuousRoundedRectangle(12.dp)) {
                             radius = 10f
                             color = Color.Black.copy(0.2f)
                             offset = Offset(0f, 16f)
@@ -349,9 +346,9 @@ fun PadPlayerScreen(
                         .border(
                             1.dp,
                             Color.White.copy(0.2f),
-                            RoundedCornerShape(12.dp)
+                            ContinuousRoundedRectangle(12.dp)
                         )
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(ContinuousRoundedRectangle(12.dp))
                         .fillMaxWidth()
                         .aspectRatio(1f)
                         .background(Color.White.copy(0.1f))
@@ -422,10 +419,7 @@ fun PadPlayerScreen(
                         val context = ShareContext(
                             lyrics = lyrics,
                             initialLine = line as KaraokeLine,
-                            backgroundState = BackgroundVisualState(
-                                bitmap = uiState.backgroundState.bitmap,
-                                isBright = uiState.backgroundState.isBright
-                            )
+                            backgroundState = uiState.backgroundState
                         )
                         shareViewModel.prepareForSharing(context)
                         playerViewModel.onShareRequested()

@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +40,7 @@ import com.mocharealm.accompanist.sample.ui.adaptive.WindowLayoutType
 import com.mocharealm.accompanist.sample.ui.utils.ScreenCornerDataDp
 import com.mocharealm.accompanist.sample.ui.utils.composable.CompatBackHandler
 import com.mocharealm.accompanist.sample.ui.utils.rememberScreenCornerDataDp
+import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
@@ -153,14 +152,14 @@ fun MobileModalScaffold(
     val bottomLeftRadius = lerp(targetRadius, screenCornerDataDp.bottomLeft, progress)
     val bottomRightRadius = lerp(targetRadius, screenCornerDataDp.bottomRight, progress)
 
-    val screenShape = if (progress != 1f) RoundedCornerShape(
+    val screenShape = if (progress != 1f) ContinuousRoundedRectangle(
         topStart = topLeftRadius,
         topEnd = topRightRadius,
         bottomStart = bottomLeftRadius,
         bottomEnd = bottomRightRadius
     ) else RectangleShape
 
-    val modalShape = RoundedCornerShape(
+    val modalShape = ContinuousRoundedRectangle(
         topStart = topLeftRadius,
         topEnd = topRightRadius,
     )
@@ -306,7 +305,7 @@ fun PadModalScaffold(
                 .align(Alignment.Center)
                 .systemBarsPadding()
                 .padding(vertical = 20.dp)
-                .clip(RoundedCornerShape(targetRadius))
+                .clip(ContinuousRoundedRectangle(targetRadius))
                 .background(
                     if (isSystemInDarkTheme())
                         Color.Black.copyHsl(lightness = 0.15f)

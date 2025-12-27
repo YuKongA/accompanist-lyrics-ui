@@ -30,7 +30,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Switch
@@ -67,6 +66,7 @@ import com.mocharealm.accompanist.sample.ui.composable.background.FlowingLightBa
 import com.mocharealm.accompanist.sample.ui.utils.composable.Capturable
 import com.mocharealm.accompanist.sample.ui.utils.composable.CapturableController
 import com.mocharealm.accompanist.sample.ui.utils.composable.rememberCapturableController
+import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.painterResource
 import org.koin.compose.viewmodel.koinViewModel
@@ -174,23 +174,23 @@ private fun ColumnScope.ShareSelectionStep(
                     .clip(
                         if (selectedLines.size > 1)
                             when {
-                                selectedLines.first() == line -> RoundedCornerShape(
+                                selectedLines.first() == line -> ContinuousRoundedRectangle(
                                     16.dp,
                                     16.dp,
                                     8.dp,
                                     8.dp
                                 )
 
-                                selectedLines.last() == line -> RoundedCornerShape(
+                                selectedLines.last() == line -> ContinuousRoundedRectangle(
                                     8.dp,
                                     8.dp,
                                     16.dp,
                                     16.dp
                                 )
 
-                                else -> RoundedCornerShape(8.dp)
+                                else -> ContinuousRoundedRectangle(8.dp)
                             }
-                        else RoundedCornerShape(16.dp)
+                        else ContinuousRoundedRectangle(16.dp)
                     )
                     .fillMaxWidth()
                     .clickable { onLineToggled(karaokeLine) }
@@ -235,7 +235,7 @@ private fun ColumnScope.ShareSelectionStep(
             Box(
                 Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(100))
+                    .clip(ContinuousRoundedRectangle(100))
                     .background(Color(0xFF3482FF))
                     .clickable(enabled = selectedLines.isNotEmpty()) { onGenerateClicked() }
                     .padding(16.dp),
@@ -372,7 +372,7 @@ private fun ColumnScope.ShareGenerateStep(
             Box(
                 Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(100))
+                    .clip(ContinuousRoundedRectangle(100))
                     .background(Color(0xFF3482FF))
                     .clickable(enabled = selectedLines.isNotEmpty()) {
                         capturableControllers[pagerState.currentPage].capture { bitmap ->
@@ -390,7 +390,7 @@ private fun ColumnScope.ShareGenerateStep(
             Box(
                 Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(100))
+                    .clip(ContinuousRoundedRectangle(100))
                     .background(Color(0xFF3482FF))
                     .clickable(enabled = selectedLines.isNotEmpty()) {
                         capturableControllers[pagerState.currentPage].capture { bitmap ->
@@ -417,13 +417,13 @@ fun ShareCardApple(
     Box(
         modifier
             .sizeIn(maxWidth = 300.dp)
-            .shadow(16.dp, RoundedCornerShape(16.dp))
+            .shadow(16.dp, ContinuousRoundedRectangle(16.dp))
     ) {
         Capturable(
             controller = capturableController,
         ) {
             Box(
-                modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                modifier = Modifier.clip(ContinuousRoundedRectangle(16.dp))
             ) {
                 FlowingLightBackground(
                     state = backgroundState,

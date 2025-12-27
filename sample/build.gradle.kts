@@ -34,6 +34,8 @@ kotlin {
 
             implementation(libs.accompanist.lyrics.core)
 
+            implementation(libs.gaze.capsule)
+
             implementation(project.dependencies.platform(libs.koin.bom))
             implementation(libs.koin.compose)
             implementation(libs.koin.compose.viewmodel)

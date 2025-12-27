@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -42,7 +43,7 @@ data class PlayerUiState(
     val isReady: Boolean = false,
     val showSelectionDialog: Boolean = true,
     val playbackState: PlaybackState = PlaybackState(),
-    val backgroundState: BackgroundVisualState = BackgroundVisualState(null, false),
+    val backgroundState: BackgroundVisualState = BackgroundVisualState(null, 0f),
     val lyrics: SyncedLyrics? = null,
     val availableSongs: List<MusicItem> = emptyList(),
     val currentMusicItem: MusicItem? = null,
@@ -137,10 +138,11 @@ class PlayerViewModel(
             lastArtworkData = newArtworkData
             if (newArtworkData != null) {
                 val newArtworkBitmap = BitmapFactory.decodeByteArray(newArtworkData, 0, newArtworkData.size).asImageBitmap()
+
                 updateState { it.copy(backgroundState = it.backgroundState.copy(newArtworkBitmap)) }
-                calculateAndApplyBrightness(newArtworkBitmap)
+                calculateAndApplyLuminance(newArtworkBitmap)
             } else {
-                updateState { it.copy(backgroundState = BackgroundVisualState(null,false)) }
+                updateState { it.copy(backgroundState = BackgroundVisualState(null,0f)) }
             }
         }
 
@@ -157,9 +159,31 @@ class PlayerViewModel(
         }
     }
 
-    private fun calculateAndApplyBrightness(artwork: ImageBitmap) {
+    private fun calculateAndApplyLuminance(artwork: ImageBitmap) {
         viewModelScope.launch(Dispatchers.Default) {
-            updateState { it.copy(backgroundState = it.backgroundState.copy(isBright = true)) }
+            try {
+                val bitmap = artwork.asAndroidBitmap()
+                val w = bitmap.width
+                val h = bitmap.height
+                val step = kotlin.math.max(1, kotlin.math.min(w, h) / 50)
+                var sum = 0.0
+                var count = 0
+                for (y in 0 until h step step) {
+                    for (x in 0 until w step step) {
+                        val c = bitmap.getPixel(x, y)
+                        val r = (c shr 16) and 0xff
+                        val g = (c shr 8) and 0xff
+                        val b = c and 0xff
+                        val lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+                        sum += lum
+                        count++
+                    }
+                }
+                val avg = if (count > 0) (sum / count / 255.0).toFloat() else 0f
+                updateState { it.copy(backgroundState = it.backgroundState.copy(luminance = avg)) }
+            } catch (_: Exception) {
+                updateState { it.copy(backgroundState = it.backgroundState.copy(luminance = 0f)) }
+            }
         }
     }
 
