@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -62,7 +63,6 @@ import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
-import com.mocharealm.accompanist.lyrics.ui.theme.SFPro
 import kotlin.math.abs
 
 @OptIn(ExperimentalSharedTransitionApi::class)
@@ -99,7 +99,8 @@ fun KaraokeLyricsView(
             )
         }
     },
-    breathingDotsColor: Color = Color.White
+    breathingDotsDefaults: KaraokeBreathingDotsDefaults = KaraokeBreathingDotsDefaults(),
+    scrollOffset: Float? = null
 ) {
     val currentTimeMs by rememberUpdatedState(currentPosition.toInt())
 
@@ -147,12 +148,12 @@ fun KaraokeLyricsView(
             hasStart && hasEnd
         }
     }
-    val windowHeightPx= LocalWindowInfo.current.containerSize.height
+    val windowHeightPx = LocalWindowInfo.current.containerSize.height
     val windowHeight = with(LocalDensity.current) {
         windowHeightPx.toDp()
     }
 
-    val baseScrollOffset = windowHeightPx * 0.1f
+    val baseScrollOffset = scrollOffset ?: (windowHeightPx * 0.1f)
 
     var isScrollProgrammatically by remember { mutableStateOf(false) }
 
@@ -216,6 +217,7 @@ fun KaraokeLyricsView(
                         startTimeMs = 0,
                         endTimeMs = firstLine.start,
                         currentTimeMs = currentTimeMs,
+                        defaults = breathingDotsDefaults
                     )
                 }
             }
@@ -316,7 +318,10 @@ fun KaraokeLyricsView(
                     }
 
                     is SyncedLine -> {
-                        val animatedScale by animateFloatAsState(targetValue = if (isCurrentFocusLine) 1.05f else 1f, label = "scale")
+                        val animatedScale by animateFloatAsState(
+                            targetValue = if (isCurrentFocusLine) 1.05f else 1f,
+                            label = "scale"
+                        )
                         val alphaAnimation by animateFloatAsState(
                             targetValue = if (isCurrentFocusLine) 1f else 0.4f,
                             label = "alpha"
@@ -339,7 +344,9 @@ fun KaraokeLyricsView(
                                     blurRadius,
                                     BlurredEdgeTreatment.Unbounded
                                 )
-                                .combinedClickable(onClick = { onLineClicked(line) }, onLongClick = { onLinePressed(line) })
+                                .combinedClickable(
+                                    onClick = { onLineClicked(line) },
+                                    onLongClick = { onLinePressed(line) })
                                 .graphicsLayer {
                                     scaleX = animatedScale
                                     scaleY = animatedScale
@@ -378,7 +385,7 @@ fun KaraokeLyricsView(
                         startTimeMs = line.end,
                         endTimeMs = nextLine!!.start,
                         currentTimeMs = currentTimeMs,
-                        breathingDotsColor = breathingDotsColor
+                        defaults = breathingDotsDefaults
                     )
                 }
             }

@@ -111,8 +111,6 @@ class PlayerViewModel(
         }
     }
 
-
-
     private fun updateState(updater: (PlayerUiState) -> PlayerUiState) {
         _uiState.update(updater)
     }

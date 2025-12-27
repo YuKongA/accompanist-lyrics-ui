@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -29,6 +30,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,14 +52,18 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
-import com.mocharealm.accompanist.lyrics.ui.theme.SFPro
+import com.mocharealm.accompanist.sample.Res
 import com.mocharealm.accompanist.sample.domain.model.MusicItem
+import com.mocharealm.accompanist.sample.ic_ellipsis
+import com.mocharealm.accompanist.sample.ui.adaptive.LocalWindowLayoutType
 import com.mocharealm.accompanist.sample.ui.adaptive.WindowLayoutType
 import com.mocharealm.accompanist.sample.ui.composable.ModalScaffold
 import com.mocharealm.accompanist.sample.ui.composable.background.BackgroundVisualState
@@ -64,7 +71,9 @@ import com.mocharealm.accompanist.sample.ui.composable.background.FlowingLightBa
 import com.mocharealm.accompanist.sample.ui.screen.share.ShareContext
 import com.mocharealm.accompanist.sample.ui.screen.share.ShareScreen
 import com.mocharealm.accompanist.sample.ui.screen.share.ShareViewModel
+import com.mocharealm.accompanist.sample.ui.theme.SFPro
 import kotlinx.coroutines.android.awaitFrame
+import org.jetbrains.compose.resources.painterResource
 import org.koin.compose.viewmodel.koinViewModel
 
 
@@ -114,7 +123,7 @@ fun PlayerScreen(
                 )
             }
 
-            when (WindowLayoutType.current) {
+            when (LocalWindowLayoutType.current) {
                 WindowLayoutType.Phone -> {
                     MobilePlayerScreen(
                         listState,
@@ -169,6 +178,7 @@ fun MobilePlayerScreen(
                 .fillMaxWidth()
         ) {
             Row(
+                Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -193,21 +203,27 @@ fun MobilePlayerScreen(
                         }) {
                     Text(
                         uiState.currentMusicItem?.label ?: "Unknown Title",
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = SFPro(),
-                        lineHeight = 1.em,
+                        style = LocalTextStyle.current.copy(
+                            fontWeight = FontWeight.Bold,
+                            textMotion = TextMotion.Animated
+                        ),
                         color = Color.White,
-                        modifier = Modifier.basicMarquee(spacing = MarqueeSpacing(20.dp))
+                        modifier = Modifier.basicMarquee(spacing = MarqueeSpacing(20.dp), repeatDelayMillis = 20000)
                     )
                     Text(
                         uiState.currentMusicItem?.testTarget?.split(" [")[0] ?: "Unknown",
-                        Modifier.alpha(0.6f).basicMarquee(spacing = MarqueeSpacing(20.dp)),
-                        fontFamily = SFPro(),
+                        Modifier
+                            .alpha(0.6f)
+                            .basicMarquee(spacing = MarqueeSpacing(20.dp), repeatDelayMillis = 20000),
+                        style =  LocalTextStyle.current.copy(
+                            textMotion = TextMotion.Animated
+                        ),
                         lineHeight = 1.em,
                         color = Color.White
                     )
                 }
             }
+            Spacer(Modifier.width(8.dp))
             Row(
                 Modifier
                     .graphicsLayer {
@@ -219,9 +235,17 @@ fun MobilePlayerScreen(
                         .clip(CircleShape)
                         .background(Color.White.copy(0.2f))
                         .clickable { playerViewModel.onOpenSongSelection() }
-                        .padding(4.dp)
-                        .size(20.dp)
-                )
+                        .padding(4.dp),
+                ) {
+                    Icon(
+                        painterResource(Res.drawable.ic_ellipsis),
+                        null,
+                        Modifier
+                            .size(20.dp)
+                            .align(Alignment.Center),
+                        tint = Color.White
+                    )
+                }
             }
         }
         uiState.lyrics?.let { finalLyrics ->
@@ -245,6 +269,18 @@ fun MobilePlayerScreen(
                     shareViewModel.prepareForSharing(context)
                     playerViewModel.onShareRequested()
                 },
+                normalLineTextStyle = LocalTextStyle.current.copy(
+                    fontSize = 34.sp,
+                    fontFamily = SFPro(),
+                    fontWeight = FontWeight.Bold,
+                    textMotion = TextMotion.Animated,
+                ),
+                accompanimentLineTextStyle = LocalTextStyle.current.copy(
+                    fontSize = 20.sp,
+                    fontFamily = SFPro(),
+                    fontWeight = FontWeight.Bold,
+                    textMotion = TextMotion.Animated,
+                ),
                 modifier = Modifier
                     .padding(horizontal = 12.dp)
                     .graphicsLayer {
@@ -346,7 +382,9 @@ fun PadPlayerScreen(
                     )
                     Text(
                         uiState.currentMusicItem?.testTarget?.split(" [")[0] ?: "Unknown",
-                        Modifier.alpha(0.6f).basicMarquee(spacing = MarqueeSpacing(20.dp)),
+                        Modifier
+                            .alpha(0.6f)
+                            .basicMarquee(spacing = MarqueeSpacing(20.dp)),
                         fontFamily = SFPro(),
                         lineHeight = 1.em,
                         color = Color.White,

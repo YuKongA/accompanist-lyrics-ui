@@ -28,7 +28,6 @@ kotlin {
                 jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
             }
         }
-        androidResources.enable = true
     }
     jvm()
 
@@ -39,26 +38,11 @@ kotlin {
                 implementation(compose.foundation)
                 implementation(compose.material3)
                 implementation(compose.ui)
-                implementation(compose.components.resources)
                 implementation(compose.components.uiToolingPreview)
                 implementation(libs.accompanist.lyrics.core)
                 implementation(compose.components.resources)
             }
         }
-    }
-}
-
-compose {
-    resources {
-        packageOfResClass = "com.mocharealm.accompanist.lyrics.ui"
-        publicResClass = true
-        generateResClass = always
-        customDirectory(
-            sourceSetName = "commonMain",
-            directoryProvider = provider {
-                layout.projectDirectory.dir("src/commonMain/resources")
-            }
-        )
     }
 }
 

@@ -137,7 +137,6 @@ compose {
     resources {
         packageOfResClass = "com.mocharealm.accompanist.sample"
         publicResClass = true
-        generateResClass = always
         customDirectory(
             sourceSetName = "commonMain",
             directoryProvider = provider {

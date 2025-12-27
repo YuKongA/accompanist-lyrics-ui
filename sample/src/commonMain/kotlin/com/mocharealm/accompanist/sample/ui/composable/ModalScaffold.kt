@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.mocharealm.accompanist.lyrics.ui.utils.copyHsl
+import com.mocharealm.accompanist.sample.ui.adaptive.LocalWindowLayoutType
 import com.mocharealm.accompanist.sample.ui.adaptive.WindowLayoutType
 import com.mocharealm.accompanist.sample.ui.utils.ScreenCornerDataDp
 import com.mocharealm.accompanist.sample.ui.utils.composable.CompatBackHandler
@@ -58,7 +59,7 @@ fun ModalScaffold(
     modalContent: @Composable (dragHandleModifier: Modifier) -> Unit,
     content: @Composable () -> Unit
 ) {
-    when (WindowLayoutType.current) {
+    when (LocalWindowLayoutType.current) {
         WindowLayoutType.Phone -> MobileModalScaffold(
             isModalOpen = isModalOpen,
             onDismissRequest = onDismissRequest,
