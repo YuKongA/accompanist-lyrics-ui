@@ -115,10 +115,10 @@ fun MobileModalScaffold(
     }
 
     val backgroundScale =
-    ((height / 2 - WindowInsets.statusBars.asPaddingValues()
-        .calculateTopPadding()) / (height / 2)).coerceAtMost(
-        0.95f
-    )
+        ((height / 2 - WindowInsets.statusBars.asPaddingValues()
+            .calculateTopPadding()) / (height / 2)).coerceAtMost(
+            0.95f
+        )
 
     // 1. 使用 Animatable 来管理垂直偏移量
     val offsetY = remember { Animatable(0f) }
@@ -313,6 +313,11 @@ fun PadModalScaffold(
         Box(
             Modifier
                 .align(Alignment.Center)
+                .graphicsLayer {
+                    alpha = 1f - progress.value
+                    scaleX = (1f - progress.value) * 0.05f + 1f
+                    scaleY = (1f - progress.value) * 0.05f + 1f
+                }
                 .systemBarsPadding()
                 .padding(vertical = 20.dp)
                 .clip(ContinuousRoundedRectangle(targetRadius))
@@ -321,9 +326,6 @@ fun PadModalScaffold(
                         Color.Black.copyHsl(lightness = 0.15f)
                     else Color.White
                 )
-                .graphicsLayer {
-                    alpha = 1f - progress.value
-                }
                 .sizeIn(maxWidth = 420.dp)
         ) {
             modalContent(Modifier)

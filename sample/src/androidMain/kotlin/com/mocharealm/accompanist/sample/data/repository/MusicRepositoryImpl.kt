@@ -26,7 +26,6 @@ class MusicRepositoryImpl(private val context: Context): MusicRepository {
                 "me.lys",
                 "me-translation.lrc"
             ),
-            //TODO： Fix playback error
             MusicItem(
                 "Golden Hour (Acapella Version)",
                 "TTML(AMLL) [Single Singer, With Accompaniment, Independent Punctuation]",
@@ -44,11 +43,19 @@ class MusicRepositoryImpl(private val context: Context): MusicRepository {
 
     override suspend fun getLyricsFor(item: MusicItem): SyncedLyrics? {
         return try {
-            val lyricsData = context.assets.open(item.lyrics).bufferedReader().use { it.readLines() }
+            val lyricsData = if (item.isCustom) {
+                item.lyrics.lines()
+            } else {
+                context.assets.open(item.lyrics).bufferedReader().use { it.readLines() }
+            }
             val lyricsRaw = autoParser.parse(lyricsData)
 
             if (item.translation != null) {
-                val translationData = context.assets.open(item.translation).bufferedReader().use { it.readLines() }
+                val translationData = if (item.isCustom) {
+                    item.translation.lines()
+                } else {
+                    context.assets.open(item.translation).bufferedReader().use { it.readLines() }
+                }
                 val translationRaw = autoParser.parse(translationData)
                 val translationMap = translationRaw.lines.associateBy { (it as SyncedLine).start }
                 SyncedLyrics(

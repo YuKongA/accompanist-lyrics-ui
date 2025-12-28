@@ -8,4 +8,5 @@ data class MusicItem(
     val mediaItem: MediaItem,
     val lyrics: String,
     val translation: String? = null,
+    val isCustom: Boolean = false
 )

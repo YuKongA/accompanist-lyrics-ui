@@ -2,10 +2,16 @@ package com.mocharealm.accompanist.sample.ui.screen.share
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -13,7 +19,6 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,6 +56,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -63,6 +69,7 @@ import com.mocharealm.accompanist.sample.Res
 import com.mocharealm.accompanist.sample.ic_accompanist
 import com.mocharealm.accompanist.sample.ui.composable.background.BackgroundVisualState
 import com.mocharealm.accompanist.sample.ui.composable.background.FlowingLightBackground
+import com.mocharealm.accompanist.sample.ui.screen.player.PlayerMetadata
 import com.mocharealm.accompanist.sample.ui.utils.composable.Capturable
 import com.mocharealm.accompanist.sample.ui.utils.composable.CapturableController
 import com.mocharealm.accompanist.sample.ui.utils.composable.rememberCapturableController
@@ -111,30 +118,34 @@ fun ShareScreen(
                     if (isSystemInDarkTheme()) Color.White.copy(0.05f) else Color.Black.copy(0.2f)
                 )
         )
-        when (uiState.step) {
-            ShareStep.SELECTING -> {
-                ShareSelectionStep(
-                    context = context,
-                    selectedLines = uiState.selectedLines,
-                    onLineToggled = { shareViewModel.toggleLineSelection(it) },
-                    onGenerateClicked = { shareViewModel.proceedToGenerate() }
-                )
-            }
+        AnimatedContent(uiState.step, transitionSpec = {
+            fadeIn() togetherWith fadeOut()
+        }) { step ->
+            when (step) {
+                ShareStep.SELECTING -> {
+                    ShareSelectionStep(
+                        context = context,
+                        selectedLines = uiState.selectedLines,
+                        onLineToggled = { shareViewModel.toggleLineSelection(it) },
+                        onGenerateClicked = { shareViewModel.proceedToGenerate() }
+                    )
+                }
 
-            ShareStep.GENERATING -> {
-                ShareGenerateStep(
-                    context = context,
-                    selectedLines = uiState.selectedLines,
-                    onBackPressed = { shareViewModel.returnToSelection() },
-                    shareViewModel = shareViewModel
-                )
+                ShareStep.GENERATING -> {
+                    ShareGenerateStep(
+                        context = context,
+                        selectedLines = uiState.selectedLines,
+                        onBackPressed = { shareViewModel.returnToSelection() },
+                        shareViewModel = shareViewModel
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ColumnScope.ShareSelectionStep(
+private fun ShareSelectionStep(
     context: ShareContext,
     selectedLines: List<KaraokeLine>,
     onLineToggled: (KaraokeLine) -> Unit,
@@ -151,209 +162,79 @@ private fun ColumnScope.ShareSelectionStep(
             }
         }
     }
-    LazyColumn(
-        state = shareLazyState,
-        modifier = Modifier
-            .weight(1f)
-            .background(
-                if (isSystemInDarkTheme()) Color.White.copy(0.1f) else Color.Black.copy(0.02f)
-            ),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(context.lyrics.lines, key = { it.start }) { line ->
-            val karaokeLine = line as KaraokeLine
-            val isSelected = selectedLines.contains(karaokeLine)
-            val backgroundColor by animateColorAsState(
-                if (isSelected) Color(0xFF3482FF).copy(0.2f)
-                else if (selectedLines.size == 5) Color.Black.copy(0.2f)
-                else if (isSystemInDarkTheme()) Color.White.copy(0.1f) else Color.White
-            )
-            Column(
-                Modifier
-                    .clip(
-                        if (selectedLines.size > 1)
-                            when {
-                                selectedLines.first() == line -> ContinuousRoundedRectangle(
-                                    16.dp,
-                                    16.dp,
-                                    8.dp,
-                                    8.dp
-                                )
-
-                                selectedLines.last() == line -> ContinuousRoundedRectangle(
-                                    8.dp,
-                                    8.dp,
-                                    16.dp,
-                                    16.dp
-                                )
-
-                                else -> ContinuousRoundedRectangle(8.dp)
-                            }
-                        else ContinuousRoundedRectangle(16.dp)
-                    )
-                    .fillMaxWidth()
-                    .clickable { onLineToggled(karaokeLine) }
-                    .background(
-                        backgroundColor
-                    )
-                    .padding(16.dp)
-            ) {
-                Text(
-                    karaokeLine.content(),
-                    style = LocalTextStyle.current.copy(
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        textMotion = TextMotion.Animated
-                    ),
-                    color = if (isSystemInDarkTheme()) Color.White else Color.Black
-                )
-                karaokeLine.translation?.let { translation ->
-                    Text(
-                        translation, Modifier.alpha(0.6f),
-                        color = if (isSystemInDarkTheme()) Color.White else Color.Black
-                    )
-                }
-            }
-        }
-    }
     Column {
-        Spacer(
-            Modifier
-                .fillMaxWidth()
-                .height(0.5.dp)
+        LazyColumn(
+            state = shareLazyState,
+            modifier = Modifier
+                .weight(1f)
                 .background(
-                    if (isSystemInDarkTheme()) Color.White.copy(0.2f) else Color.Black.copy(0.2f)
-                )
-        )
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
+                    if (isSystemInDarkTheme()) Color.White.copy(0.1f) else Color.Black.copy(0.02f)
+                ),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(
-                Modifier
-                    .weight(1f)
-                    .clip(ContinuousRoundedRectangle(100))
-                    .background(Color(0xFF3482FF))
-                    .clickable(enabled = selectedLines.isNotEmpty()) { onGenerateClicked() }
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Generate Share Card", color = Color.White)
-            }
-        }
-    }
+            stickyHeader {
+                Row {
 
-}
-
-@Composable
-private fun ColumnScope.ShareGenerateStep(
-    context: ShareContext,
-    shareViewModel: ShareViewModel,
-    selectedLines: List<KaraokeLine>,
-    onBackPressed: () -> Unit,
-) {
-    BackHandler { onBackPressed() }
-    var showTranslation by remember { mutableStateOf(true) }
-    val localContext = LocalContext.current
-    LaunchedEffect(Unit) {
-        shareViewModel.toastEvent.collect { message ->
-            Toast.makeText(localContext, message, Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // Listen for share events
-    LaunchedEffect(Unit) {
-        shareViewModel.shareEvent.collect { uri ->
-            val sendIntent: Intent = Intent().apply {
-                action = Intent.ACTION_SEND
-                putExtra(Intent.EXTRA_STREAM, uri)
-                type = "image/png"
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            val shareIntent = Intent.createChooser(sendIntent, null)
-            localContext.startActivity(shareIntent)
-        }
-    }
-
-    val pagerState = rememberPagerState {
-        2
-    }
-    val capturableControllers = List(pagerState.pageCount) {
-        rememberCapturableController()
-    }
-    HorizontalPager(
-        pagerState,
-        Modifier
-            .weight(1f)
-            .background(
-                if (isSystemInDarkTheme()) Color.White.copy(0.1f) else Color.Black.copy(
-                    0.1f
-                )
-            ),
-        beyondViewportPageCount = 2
-    ) { pageNumber ->
-        Box(
-            Modifier
-                .fillMaxSize()
-                .pagerCubeInDepthTransition(pageNumber, pagerState)
-        ) {
-            when (pageNumber) {
-                0 -> {
-                    ShareCardApple(
-                        capturableController = capturableControllers[pageNumber],
-                        backgroundState = context.backgroundState,
-                        showTranslation = showTranslation,
-                        selectedLines = selectedLines,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-                }
-
-                1 -> {
-                    ShareCardSpotify(
-                        capturableController = capturableControllers[pageNumber],
-                        showTranslation = showTranslation,
-                        selectedLines = selectedLines,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
                 }
             }
-        }
-    }
-
-    // Settings
-    Column {
-        Spacer(
-            Modifier
-                .fillMaxWidth()
-                .height(0.5.dp)
-                .background(
-                    if (isSystemInDarkTheme()) Color.White.copy(0.2f) else Color.Black.copy(0.2f)
+            items(context.lyrics.lines, key = { it.start }) { line ->
+                val karaokeLine = line as KaraokeLine
+                val isSelected = selectedLines.contains(karaokeLine)
+                val backgroundColor by animateColorAsState(
+                    if (isSelected) Color(0xFF3482FF).copy(0.2f)
+                    else if (selectedLines.size == 5) Color.Black.copy(0.2f)
+                    else if (isSystemInDarkTheme()) Color.White.copy(0.1f) else Color.White
                 )
-        )
-        if (selectedLines.any { it.translation != null }) {
+                Column(
+                    Modifier
+                        .clip(
+                            if (selectedLines.size > 1)
+                                when {
+                                    selectedLines.first() == line -> ContinuousRoundedRectangle(
+                                        16.dp,
+                                        16.dp,
+                                        8.dp,
+                                        8.dp
+                                    )
 
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                Arrangement.SpaceBetween,
-                Alignment.CenterVertically
-            ) {
-                Column {
+                                    selectedLines.last() == line -> ContinuousRoundedRectangle(
+                                        8.dp,
+                                        8.dp,
+                                        16.dp,
+                                        16.dp
+                                    )
+
+                                    else -> ContinuousRoundedRectangle(8.dp)
+                                }
+                            else ContinuousRoundedRectangle(16.dp)
+                        )
+                        .fillMaxWidth()
+                        .clickable { onLineToggled(karaokeLine) }
+                        .background(
+                            backgroundColor
+                        )
+                        .padding(16.dp)
+                ) {
                     Text(
-                        "Show translation",
+                        karaokeLine.content(),
+                        style = LocalTextStyle.current.copy(
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            textMotion = TextMotion.Animated
+                        ),
                         color = if (isSystemInDarkTheme()) Color.White else Color.Black
                     )
-                    Text(
-                        "Tap to toggle",
-                        color = if (isSystemInDarkTheme()) Color.White else Color.Black
-                    )
+                    karaokeLine.translation?.let { translation ->
+                        Text(
+                            translation, Modifier.alpha(0.6f),
+                            color = if (isSystemInDarkTheme()) Color.White else Color.Black
+                        )
+                    }
                 }
-                Switch(showTranslation, onCheckedChange = { showTranslation = it })
             }
+        }
+        Column {
             Spacer(
                 Modifier
                     .fillMaxWidth()
@@ -362,45 +243,190 @@ private fun ColumnScope.ShareGenerateStep(
                         if (isSystemInDarkTheme()) Color.White.copy(0.2f) else Color.Black.copy(0.2f)
                     )
             )
-        }
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Box(
+            Row(
                 Modifier
-                    .weight(1f)
-                    .clip(ContinuousRoundedRectangle(100))
-                    .background(Color(0xFF3482FF))
-                    .clickable(enabled = selectedLines.isNotEmpty()) {
-                        capturableControllers[pagerState.currentPage].capture { bitmap ->
-                            shareViewModel.saveBitmapToGallery(
-                                localContext,
-                                bitmap.asAndroidBitmap()
-                            )
-                        }
-                    }
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                Text("Save", color = Color.White)
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(ContinuousRoundedRectangle(100))
+                        .background(Color(0xFF3482FF))
+                        .clickable(enabled = selectedLines.isNotEmpty()) { onGenerateClicked() }
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Generate Share Card", color = Color.White)
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun ShareGenerateStep(
+    context: ShareContext,
+    shareViewModel: ShareViewModel,
+    selectedLines: List<KaraokeLine>,
+    onBackPressed: () -> Unit,
+) {
+    Column {
+        BackHandler { onBackPressed() }
+        var showTranslation by remember { mutableStateOf(true) }
+        val localContext = LocalContext.current
+        LaunchedEffect(Unit) {
+            shareViewModel.toastEvent.collect { message ->
+                Toast.makeText(localContext, message, Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Listen for share events
+        LaunchedEffect(Unit) {
+            shareViewModel.shareEvent.collect { uri ->
+                val sendIntent: Intent = Intent().apply {
+                    action = Intent.ACTION_SEND
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    type = "image/png"
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                val shareIntent = Intent.createChooser(sendIntent, null)
+                localContext.startActivity(shareIntent)
+            }
+        }
+
+        val pagerState = rememberPagerState {
+            2
+        }
+        val capturableControllers = List(pagerState.pageCount) {
+            rememberCapturableController()
+        }
+        HorizontalPager(
+            pagerState,
+            Modifier
+                .weight(1f)
+                .background(
+                    if (isSystemInDarkTheme()) Color.White.copy(0.1f) else Color.Black.copy(
+                        0.1f
+                    )
+                ),
+            beyondViewportPageCount = 2
+        ) { pageNumber ->
             Box(
                 Modifier
-                    .weight(1f)
-                    .clip(ContinuousRoundedRectangle(100))
-                    .background(Color(0xFF3482FF))
-                    .clickable(enabled = selectedLines.isNotEmpty()) {
-                        capturableControllers[pagerState.currentPage].capture { bitmap ->
-                            shareViewModel.prepareForSharing(localContext, bitmap.asAndroidBitmap())
-                        }
-                    }
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
+                    .fillMaxSize()
+                    .pagerCubeInDepthTransition(pageNumber, pagerState)
             ) {
-                Text("Share", color = Color.White)
+                when (pageNumber) {
+                    0 -> {
+                        ShareCardApple(
+                            capturableController = capturableControllers[pageNumber],
+                            backgroundState = context.backgroundState,
+                            showTranslation = showTranslation,
+                            selectedLines = selectedLines,
+                            title = context.title,
+                            artist = context.artist,
+                            cover = context.cover,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+
+                    1 -> {
+                        ShareCardSpotify(
+                            capturableController = capturableControllers[pageNumber],
+                            showTranslation = showTranslation,
+                            selectedLines = selectedLines,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Settings
+        Column {
+            Spacer(
+                Modifier
+                    .fillMaxWidth()
+                    .height(0.5.dp)
+                    .background(
+                        if (isSystemInDarkTheme()) Color.White.copy(0.2f) else Color.Black.copy(0.2f)
+                    )
+            )
+            if (selectedLines.any { it.translation != null }) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    Arrangement.SpaceBetween,
+                    Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            "Show translation",
+                            color = if (isSystemInDarkTheme()) Color.White else Color.Black
+                        )
+//                        Text(
+//                            "Tap to toggle",
+//                            color = if (isSystemInDarkTheme()) Color.White else Color.Black
+//                        )
+                    }
+                    Switch(showTranslation, onCheckedChange = { showTranslation = it })
+                }
+                Spacer(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(0.5.dp)
+                        .background(
+                            if (isSystemInDarkTheme()) Color.White.copy(0.2f) else Color.Black.copy(
+                                0.2f
+                            )
+                        )
+                )
+            }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(ContinuousRoundedRectangle(100))
+                        .background(Color(0xFF3482FF))
+                        .clickable(enabled = selectedLines.isNotEmpty()) {
+                            capturableControllers[pagerState.currentPage].capture { bitmap ->
+                                shareViewModel.saveBitmapToGallery(
+                                    localContext,
+                                    bitmap.asAndroidBitmap()
+                                )
+                            }
+                        }
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Save", color = Color.White)
+                }
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(ContinuousRoundedRectangle(100))
+                        .background(Color(0xFF3482FF))
+                        .clickable(enabled = selectedLines.isNotEmpty()) {
+                            capturableControllers[pagerState.currentPage].capture { bitmap ->
+                                shareViewModel.prepareForSharing(
+                                    localContext,
+                                    bitmap.asAndroidBitmap()
+                                )
+                            }
+                        }
+                        .padding(16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Share", color = Color.White)
+                }
             }
         }
     }
@@ -412,6 +438,9 @@ fun ShareCardApple(
     backgroundState: BackgroundVisualState,
     showTranslation: Boolean,
     selectedLines: List<KaraokeLine>,
+    title: String,
+    artist: String,
+    cover: Bitmap,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -423,7 +452,9 @@ fun ShareCardApple(
             controller = capturableController,
         ) {
             Box(
-                modifier = Modifier.clip(ContinuousRoundedRectangle(16.dp))
+                modifier = Modifier
+                    .clip(ContinuousRoundedRectangle(16.dp))
+                    .background(Color.White)
             ) {
                 FlowingLightBackground(
                     state = backgroundState,
@@ -431,16 +462,16 @@ fun ShareCardApple(
                 )
                 LazyColumn(
                     modifier = Modifier
-                        .graphicsLayer {
-                            blendMode = BlendMode.Plus
-                            compositingStrategy = CompositingStrategy.Offscreen
-                        }
                 ) {
                     item("logo") {
                         Row(
                             Modifier
                                 .padding(16.dp)
-                                .alpha(0.4f),
+                                .alpha(0.4f)
+                                .graphicsLayer {
+                                    blendMode = BlendMode.Plus
+                                    compositingStrategy = CompositingStrategy.Offscreen
+                                },
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
@@ -464,6 +495,10 @@ fun ShareCardApple(
                             Modifier
                                 .padding(horizontal = 16.dp)
                                 .padding(bottom = 16.dp)
+                                .graphicsLayer {
+                                    blendMode = BlendMode.Plus
+                                    compositingStrategy = CompositingStrategy.Offscreen
+                                }
                         ) {
                             Text(
                                 line.content(),
@@ -485,7 +520,23 @@ fun ShareCardApple(
                         }
                     }
                     item("info") {
-
+                        Row(
+                            Modifier
+                                .background(Color.White.copy(0.1f))
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Image(
+                                cover.asImageBitmap(),
+                                null,
+                                Modifier
+                                    .size(48.dp)
+                                    .clip(ContinuousRoundedRectangle(4.dp))
+                            )
+                            PlayerMetadata(title, artist)
+                        }
                     }
                 }
             }
@@ -550,7 +601,7 @@ fun ShareCardSpotify(
                             .height(16.dp)
                     )
                 }
-                item("logo") {
+                item("info") {
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -569,9 +620,7 @@ fun ShareCardSpotify(
                 }
             }
         }
-
     }
-
 }
 
 fun Modifier.pagerCubeInDepthTransition(page: Int, pagerState: PagerState) = graphicsLayer {

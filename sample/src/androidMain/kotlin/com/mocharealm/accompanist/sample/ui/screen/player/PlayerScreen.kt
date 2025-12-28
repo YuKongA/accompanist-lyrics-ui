@@ -45,21 +45,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.dropShadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 import com.mocharealm.accompanist.sample.Res
 import com.mocharealm.accompanist.sample.domain.model.MusicItem
+import com.mocharealm.accompanist.sample.empty
 import com.mocharealm.accompanist.sample.ic_ellipsis
 import com.mocharealm.accompanist.sample.ui.adaptive.LocalWindowLayoutType
 import com.mocharealm.accompanist.sample.ui.adaptive.WindowLayoutType
@@ -71,9 +72,20 @@ import com.mocharealm.accompanist.sample.ui.screen.share.ShareViewModel
 import com.mocharealm.accompanist.sample.ui.theme.SFPro
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.android.awaitFrame
+import org.jetbrains.compose.resources.imageResource
 import org.jetbrains.compose.resources.painterResource
 import org.koin.compose.viewmodel.koinViewModel
 import kotlin.math.abs
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.media3.common.MediaItem
+import kotlinx.coroutines.launch
 
 
 @Composable
@@ -193,102 +205,41 @@ fun MobilePlayerScreen(
                             .size(60.dp)
                     )
                 }
-                Column(
-                    Modifier
-                        .graphicsLayer {
-                            blendMode = BlendMode.Plus
-                        }) {
-                    Text(
-                        uiState.currentMusicItem?.label ?: "Unknown Title",
-                        style = LocalTextStyle.current.copy(
-                            fontWeight = FontWeight.Bold,
-                            textMotion = TextMotion.Animated
-                        ),
-                        color = Color.White,
-                        modifier = Modifier.basicMarquee(
-                            spacing = MarqueeSpacing(20.dp),
-                            repeatDelayMillis = 2000
-                        )
-                    )
-                    Text(
-                        uiState.currentMusicItem?.testTarget?.split(" [")[0] ?: "Unknown",
-                        Modifier
-                            .alpha(0.6f)
-                            .basicMarquee(
-                                spacing = MarqueeSpacing(20.dp),
-                                repeatDelayMillis = 2000
-                            ),
-                        style = LocalTextStyle.current.copy(
-                            textMotion = TextMotion.Animated
-                        ),
-                        lineHeight = 1.em,
-                        color = Color.White
-                    )
-                }
+                PlayerMetadata(
+                    uiState.currentMusicItem?.label ?: "Unknown Title",
+                    uiState.currentMusicItem?.testTarget?.split(" [")?.get(0)
+                        ?: "Unknown"
+                )
             }
             Spacer(Modifier.width(8.dp))
-            Row(
-                Modifier
-                    .graphicsLayer {
-                        blendMode = BlendMode.Plus
-                    }, horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Box(
-                    Modifier
-                        .clip(CircleShape)
-                        .background(Color.White.copy(0.2f))
-                        .clickable { playerViewModel.onOpenSongSelection() }
-                        .padding(4.dp),
-                ) {
-                    Icon(
-                        painterResource(Res.drawable.ic_ellipsis),
-                        null,
-                        Modifier
-                            .size(20.dp)
-                            .align(Alignment.Center),
-                        tint = Color.White
-                    )
-                }
-            }
+            PlayerControls(onOpenSongSelection = { playerViewModel.onOpenSongSelection() })
         }
-        uiState.lyrics?.let { finalLyrics ->
-            KaraokeLyricsView(
-                listState = listState,
-                lyrics = finalLyrics,
-                currentPosition = animatedPosition,
-                onLineClicked = { line ->
-                    playerViewModel.seekTo(line.start.toLong())
-                },
-                onLinePressed = { line ->
+
+        val cover =
+            (uiState.backgroundState.bitmap ?: imageResource(Res.drawable.empty)).asAndroidBitmap()
+        PlayerLyrics(
+            listState = listState,
+            lyrics = uiState.lyrics,
+            currentPosition = animatedPosition,
+            onSeekTo = { playerViewModel.seekTo(it) },
+            onShare = { line ->
+                uiState.lyrics?.let { lyrics ->
                     playerViewModel.onShareRequested()
                     val context = ShareContext(
-                        lyrics = finalLyrics,
-                        initialLine = line as KaraokeLine,
-                        backgroundState = uiState.backgroundState
+                        lyrics = lyrics,
+                        initialLine = line,
+                        backgroundState = uiState.backgroundState,
+                        title = uiState.currentMusicItem?.label ?: "Unknown Title",
+                        artist = uiState.currentMusicItem?.testTarget?.split(" [")?.get(0)
+                            ?: "Unknown",
+                        cover = cover
                     )
                     shareViewModel.prepareForSharing(context)
                     playerViewModel.onShareRequested()
-                },
-                normalLineTextStyle = LocalTextStyle.current.copy(
-                    fontSize = 34.sp,
-                    fontFamily = SFPro(),
-                    fontWeight = FontWeight.Bold,
-                    textMotion = TextMotion.Animated,
-                ),
-                accompanimentLineTextStyle = LocalTextStyle.current.copy(
-                    fontSize = 20.sp,
-                    fontFamily = SFPro(),
-                    fontWeight = FontWeight.Bold,
-                    textMotion = TextMotion.Animated,
-                ),
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .graphicsLayer {
-                        blendMode = BlendMode.Plus
-                        compositingStrategy = CompositingStrategy.Offscreen
-                    },
-            )
-        }
+                }
+            },
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
     }
 }
 
@@ -317,46 +268,25 @@ fun PadPlayerScreen(
                 .padding(start = 100.dp)
                 .padding(top = 28.dp)
         ) {
-            if (uiState.backgroundState.bitmap != null) {
-                Image(
-                    uiState.backgroundState.bitmap,
-                    null,
-                    Modifier
-                        .dropShadow(ContinuousRoundedRectangle(12.dp)) {
-                            radius = 10f
-                            color = Color.Black.copy(0.2f)
-                            offset = Offset(0f, 16f)
-                            spread = -10f
-                        }
-                        .border(
-                            1.dp,
-                            Color.White.copy(0.2f),
-                            ContinuousRoundedRectangle(12.dp)
-                        )
-                        .clip(ContinuousRoundedRectangle(12.dp))
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                )
-            } else {
-                Box(
-                    Modifier
-                        .dropShadow(ContinuousRoundedRectangle(12.dp)) {
-                            radius = 10f
-                            color = Color.Black.copy(0.2f)
-                            offset = Offset(0f, 16f)
-                            spread = -10f
-                        }
-                        .border(
-                            1.dp,
-                            Color.White.copy(0.2f),
-                            ContinuousRoundedRectangle(12.dp)
-                        )
-                        .clip(ContinuousRoundedRectangle(12.dp))
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .background(Color.White.copy(0.1f))
-                )
-            }
+            Image(
+                uiState.backgroundState.bitmap ?: imageResource(Res.drawable.empty),
+                null,
+                Modifier
+//                        .dropShadow(ContinuousRoundedRectangle(12.dp)) {
+//                            radius = 10f
+//                            color = Color.Black.copy(0.2f)
+//                            offset = Offset(0f, 16f)
+//                            spread = -10f
+//                        }
+                    .border(
+                        1.dp,
+                        Color.White.copy(0.2f),
+                        ContinuousRoundedRectangle(12.dp)
+                    )
+                    .clip(ContinuousRoundedRectangle(12.dp))
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+            )
             Spacer(
                 Modifier
                     .fillMaxWidth()
@@ -367,78 +297,135 @@ fun PadPlayerScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(
-                    Modifier
-                        .graphicsLayer {
-                            blendMode = BlendMode.Plus
-                        }) {
-                    Text(
-                        uiState.currentMusicItem?.label ?: "Unknown Title",
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = SFPro(),
-                        lineHeight = 1.em,
-                        color = Color.White,
-                        modifier = Modifier.basicMarquee(spacing = MarqueeSpacing(20.dp))
-                    )
-                    Text(
-                        uiState.currentMusicItem?.testTarget?.split(" [")[0] ?: "Unknown",
-                        Modifier
-                            .alpha(0.6f)
-                            .basicMarquee(spacing = MarqueeSpacing(20.dp)),
-                        fontFamily = SFPro(),
-                        lineHeight = 1.em,
-                        color = Color.White,
-                    )
-                }
-                Row(
-                    Modifier
-                        .graphicsLayer {
-                            blendMode = BlendMode.Plus
-                        }, horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Box(
-                        Modifier
-                            .clip(CircleShape)
-                            .background(Color.White.copy(0.2f))
-                            .clickable { playerViewModel.onOpenSongSelection() }
-                            .padding(4.dp)
-                            .size(20.dp)
-                    )
-                }
+                PlayerMetadata(
+                    uiState.currentMusicItem?.label ?: "Unknown Title",
+                    uiState.currentMusicItem?.testTarget?.split(" [")?.get(0)
+                        ?: "Unknown"
+                )
+                PlayerControls(onOpenSongSelection = { playerViewModel.onOpenSongSelection() })
             }
 
         }
         AnimatedVisibility(uiState.lyrics != null) {
-            uiState.lyrics?.let { lyrics ->
-                KaraokeLyricsView(
-                    listState = listState,
-                    lyrics = lyrics,
-                    currentPosition = animatedPosition,
-                    onLineClicked = { line ->
-                        playerViewModel.seekTo(line.start.toLong())
-                    },
-                    onLinePressed = { line ->
+            val cover =
+                (uiState.backgroundState.bitmap
+                    ?: imageResource(Res.drawable.empty)).asAndroidBitmap()
+            PlayerLyrics(
+                listState = listState,
+                lyrics = uiState.lyrics,
+                currentPosition = animatedPosition,
+                onSeekTo = { playerViewModel.seekTo(it) },
+                onShare = { line ->
+                    uiState.lyrics?.let { lyrics ->
                         playerViewModel.onShareRequested()
                         val context = ShareContext(
                             lyrics = lyrics,
-                            initialLine = line as KaraokeLine,
-                            backgroundState = uiState.backgroundState
+                            initialLine = line,
+                            backgroundState = uiState.backgroundState,
+                            title = uiState.currentMusicItem?.label ?: "Unknown Title",
+                            artist = uiState.currentMusicItem?.testTarget?.split(" [")?.get(0)
+                                ?: "Unknown",
+                            cover = cover
                         )
                         shareViewModel.prepareForSharing(context)
                         playerViewModel.onShareRequested()
-                    },
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(start = 60.dp, end = 60.dp)
-                        .weight(1f)
-                        .graphicsLayer {
-                            blendMode = BlendMode.Plus
-                            compositingStrategy = CompositingStrategy.Offscreen
-                        },
-                )
-            }
+                    }
+                },
+                modifier = Modifier
+                    .padding(horizontal = 12.dp)
+                    .padding(start = 60.dp, end = 60.dp)
+                    .weight(1f)
+            )
         }
     }
+}
+
+@Composable
+fun CustomSongSelectionDialog(
+    onDismissRequest: () -> Unit,
+    onSongSelected: (MusicItem) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    
+    var audioUri by remember { mutableStateOf<Uri?>(null) }
+    var lyricsUri by remember { mutableStateOf<Uri?>(null) }
+    var translationUri by remember { mutableStateOf<Uri?>(null) }
+    
+    var audioName by remember { mutableStateOf("Select Audio") }
+    var lyricsName by remember { mutableStateOf("Select Lyrics") }
+    var translationName by remember { mutableStateOf("Select Translation (Optional)") }
+
+    val audioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            audioUri = it
+            audioName = it.path?.split("/")?.last() ?: "Audio Selected"
+        }
+    }
+    
+    val lyricsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            lyricsUri = it
+            lyricsName = it.path?.split("/")?.last() ?: "Lyrics Selected"
+        }
+    }
+    
+    val translationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            translationUri = it
+            translationName = it.path?.split("/")?.last() ?: "Translation Selected"
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text("Custom Song Selection") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { audioLauncher.launch("audio/*") }, modifier = Modifier.fillMaxWidth()) {
+                    Text(audioName)
+                }
+                OutlinedButton(onClick = { lyricsLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) {
+                    Text(lyricsName)
+                }
+                OutlinedButton(onClick = { translationLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) {
+                    Text(translationName)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (audioUri != null && lyricsUri != null) {
+                        scope.launch {
+                            val lyricsContent = context.contentResolver.openInputStream(lyricsUri!!)?.bufferedReader()?.use { it.readText() } ?: ""
+                            val translationContent = translationUri?.let { 
+                                context.contentResolver.openInputStream(it)?.bufferedReader()?.use { it.readText() }
+                            }
+                            
+                            val item = MusicItem(
+                                label = audioName,
+                                testTarget = "Custom Selection",
+                                mediaItem = MediaItem.fromUri(audioUri!!),
+                                lyrics = lyricsContent,
+                                translation = translationContent,
+                                isCustom = true
+                            )
+                            onSongSelected(item)
+                        }
+                    }
+                },
+                enabled = audioUri != null && lyricsUri != null
+            ) {
+                Text("Play")
+            }
+        },
+        dismissButton = {
+            Button(onClick = { onDismissRequest() }) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -447,29 +434,154 @@ fun MusicItemSelectionDialog(
     onItemSelected: (MusicItem) -> Unit,
     onDismissRequest: () -> Unit
 ) {
-    var selectedIndex by remember { mutableIntStateOf(-1) }
-    AlertDialog(
-        onDismissRequest = onDismissRequest,
-        title = { Text("Choose a song to play") },
-        text = {
-            LazyColumn {
-                itemsIndexed(items) { index, item ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { selectedIndex = index }
-                            .padding(vertical = 12.dp)) {
-                        Text(item.label, fontWeight = FontWeight.Bold)
-                        Text(item.testTarget, fontSize = 14.sp)
+    var showCustomDialog by remember { mutableStateOf(false) }
+    
+    if (showCustomDialog) {
+        CustomSongSelectionDialog(
+            onDismissRequest = { showCustomDialog = false },
+            onSongSelected = { 
+                showCustomDialog = false
+                onItemSelected(it) 
+            }
+        )
+    } else {
+        var selectedIndex by remember { mutableIntStateOf(-1) }
+        AlertDialog(
+            onDismissRequest = onDismissRequest,
+            title = { Text("Choose a song to play") },
+            text = {
+                LazyColumn {
+                    item {
+                        OutlinedButton(
+                            onClick = { showCustomDialog = true },
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        ) {
+                            Text("Select Custom File...")
+                        }
+                    }
+                    itemsIndexed(items) { index, item ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedIndex = index }
+                                .padding(vertical = 12.dp)) {
+                            Text(item.label, fontWeight = FontWeight.Bold)
+                            Text(item.testTarget, fontSize = 14.sp)
+                        }
                     }
                 }
-            }
-        },
-        confirmButton = {
-            Text("Confirm", Modifier.clickable {
-                if (selectedIndex != -1) {
-                    onItemSelected(items[selectedIndex])
-                }
+            },
+            confirmButton = {
+                Text("Confirm", Modifier.clickable {
+                    if (selectedIndex != -1) {
+                        onItemSelected(items[selectedIndex])
+                    }
+                })
             })
-        })
+    }
+}
+
+@Composable
+fun PlayerMetadata(
+    title: String,
+    artist: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = Modifier.graphicsLayer {
+            blendMode = BlendMode.Plus
+            compositingStrategy = CompositingStrategy.Offscreen
+        }
+    ) {
+        Text(
+            text = title,
+            style = LocalTextStyle.current.copy(
+                fontWeight = FontWeight.Bold,
+                textMotion = TextMotion.Animated
+            ),
+            color = Color.White,
+            modifier = Modifier.basicMarquee(
+                spacing = MarqueeSpacing(20.dp),
+                repeatDelayMillis = 2000
+            )
+        )
+        Text(
+            text = artist,
+            modifier = Modifier
+                .alpha(0.4f)
+                .basicMarquee(
+                    spacing = MarqueeSpacing(20.dp),
+                    repeatDelayMillis = 2000
+                ),
+            style = LocalTextStyle.current.copy(
+                textMotion = TextMotion.Animated
+            ),
+            lineHeight = 1.em,
+            color = Color.White
+        )
+    }
+}
+
+@Composable
+fun PlayerControls(
+    onOpenSongSelection: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.graphicsLayer { blendMode = BlendMode.Plus },
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            Modifier
+                .clip(CircleShape)
+                .background(Color.White.copy(0.2f))
+                .clickable(onClick = onOpenSongSelection)
+                .padding(4.dp),
+        ) {
+            Icon(
+                painterResource(Res.drawable.ic_ellipsis),
+                null,
+                Modifier
+                    .size(20.dp)
+                    .align(Alignment.Center),
+                tint = Color.White
+            )
+        }
+    }
+}
+
+@Composable
+fun PlayerLyrics(
+    listState: LazyListState,
+    lyrics: SyncedLyrics?,
+    currentPosition: Long,
+    onSeekTo: (Long) -> Unit,
+    onShare: (KaraokeLine) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (lyrics == null) return
+
+    KaraokeLyricsView(
+        listState = listState,
+        lyrics = lyrics,
+        currentPosition = currentPosition,
+        onLineClicked = { line -> onSeekTo(line.start.toLong()) },
+        onLinePressed = { line -> onShare(line as KaraokeLine) },
+        normalLineTextStyle = LocalTextStyle.current.copy(
+            fontSize = 34.sp,
+            fontFamily = SFPro(),
+            fontWeight = FontWeight.Bold,
+            textMotion = TextMotion.Animated,
+        ),
+        accompanimentLineTextStyle = LocalTextStyle.current.copy(
+            fontSize = 20.sp,
+            fontFamily = SFPro(),
+            fontWeight = FontWeight.Bold,
+            textMotion = TextMotion.Animated,
+        ),
+        modifier = modifier.graphicsLayer {
+            blendMode = BlendMode.Plus
+            compositingStrategy = CompositingStrategy.Offscreen
+        },
+    )
 }
