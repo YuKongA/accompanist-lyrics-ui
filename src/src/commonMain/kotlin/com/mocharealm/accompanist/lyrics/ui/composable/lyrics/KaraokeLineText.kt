@@ -4,6 +4,7 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.EaseInOut
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -75,8 +76,6 @@ data class WrappedLine(
     val syllables: List<SyllableLayout>, val totalWidth: Float
 )
 
-
-// --- LOGIC FOR MEASUREMENT AND LAYOUT CALCULATION ---
 private fun groupIntoWords(syllables: List<KaraokeSyllable>): List<List<KaraokeSyllable>> {
     if (syllables.isEmpty()) return emptyList()
     val words = mutableListOf<List<KaraokeSyllable>>()
@@ -171,6 +170,7 @@ private fun calculateBalancedLines(
     textMeasurer: TextMeasurer,
     style: TextStyle
 ): List<WrappedLine> {
+//    if (syllableLayouts.all { !it.syllable.content.trim().isPureCjk() }) return calculateGreedyWrappedLines(syllableLayouts, availableWidthPx, textMeasurer, style)
     if (syllableLayouts.isEmpty()) return emptyList()
 
     val n = syllableLayouts.size
@@ -516,11 +516,11 @@ fun KaraokeLineText(
 
     val animatedScale by animateFloatAsState(
         targetValue = if (isFocused) 1f else 0.98f, animationSpec = if (isFocused) {
-            androidx.compose.animation.core.tween(
+           tween(
                 durationMillis = 600, easing = LinearOutSlowInEasing
             )
         } else {
-            androidx.compose.animation.core.tween(
+            tween(
                 durationMillis = 300, easing = EaseInOut
             )
         }, label = "scale"

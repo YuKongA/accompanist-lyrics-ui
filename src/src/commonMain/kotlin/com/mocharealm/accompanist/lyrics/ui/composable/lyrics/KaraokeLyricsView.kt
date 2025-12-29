@@ -3,6 +3,8 @@ package com.mocharealm.accompanist.lyrics.ui.composable.lyrics
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -47,6 +49,7 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -322,8 +325,17 @@ fun KaraokeLyricsView(
 
                     is SyncedLine -> {
                         val animatedScale by animateFloatAsState(
-                            targetValue = if (isCurrentFocusLine) 1.05f else 1f,
-                            label = "scale"
+                            targetValue = if (isCurrentFocusLine) 1f else 0.98f,
+                            label = "scale",
+                            animationSpec = if (isCurrentFocusLine) {
+                                tween(
+                                    durationMillis = 600, easing = LinearOutSlowInEasing
+                                )
+                            } else {
+                                tween(
+                                    durationMillis = 300, easing = EaseInOut
+                                )
+                            }
                         )
                         val alphaAnimation by animateFloatAsState(
                             targetValue = if (isCurrentFocusLine) 1f else 0.4f,
@@ -356,6 +368,7 @@ fun KaraokeLyricsView(
                                     alpha = alphaAnimation
                                     transformOrigin = TransformOrigin(0f, 1f)
                                     this.blendMode = blendMode
+                                    compositingStrategy = CompositingStrategy.Offscreen
                                 },
                         ) {
                             Column(
@@ -389,7 +402,8 @@ fun KaraokeLyricsView(
                         startTimeMs = line.end,
                         endTimeMs = nextLine!!.start,
                         currentTimeMs = currentTimeMs,
-                        defaults = breathingDotsDefaults
+                        defaults = breathingDotsDefaults,
+                        modifier = Modifier.padding(vertical = 8.dp)
                     )
                 }
             }
