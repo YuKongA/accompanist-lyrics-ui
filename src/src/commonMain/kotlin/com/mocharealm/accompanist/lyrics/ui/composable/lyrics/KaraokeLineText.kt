@@ -65,6 +65,13 @@ import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
+// 静态 Brush 避免重复创建
+private val InactiveBrush = Brush.horizontalGradient(listOf(Color.White.copy(0.2f), Color.White.copy(0.2f)))
+private val ActiveBrush = Brush.horizontalGradient(listOf(Color.White, Color.White))
+
+// 静态 Paint 用于 saveLayer，避免重复分配
+private val LayerPaint = Paint()
+
 data class SyllableLayout(
     val syllable: KaraokeSyllable,
     val textLayoutResult: TextLayoutResult,
@@ -74,7 +81,9 @@ data class SyllableLayout(
     val position: Offset = Offset.Zero,
     val wordPivot: Offset = Offset.Zero,
     val wordAnimInfo: WordAnimationInfo? = null,
-    val charOffsetInWord: Int = 0
+    val charOffsetInWord: Int = 0,
+    val charLayouts: List<TextLayoutResult>? = null, // 新增：缓存每个字符的测量结果
+    val charOriginalBounds: List<Rect>? = null       // 新增：缓存每个字符的原始位置
 )
 
 data class WordAnimationInfo(
@@ -115,7 +124,8 @@ private fun measureSyllablesAndDetermineAnimation(
     syllables: List<KaraokeSyllable>,
     textMeasurer: TextMeasurer,
     style: TextStyle,
-    isAccompanimentLine: Boolean
+    isAccompanimentLine: Boolean,
+    spaceWidth: Float
 ): List<SyllableLayout> {
     val words = groupIntoWords(syllables)
     val fastCharAnimationThresholdMs = 200f
@@ -142,19 +152,33 @@ private fun measureSyllablesAndDetermineAnimation(
             if (syllable.content.endsWith(" ")) {
                 val trimmedWidth = textMeasurer.measure(syllable.content.trimEnd(), style).size.width.toFloat()
                 if (layoutWidth <= trimmedWidth) {
-                    val singleSpaceWidth = textMeasurer.measure(" ", style).size.width.toFloat()
                     val spaceCount = syllable.content.length - syllable.content.trimEnd().length
-                    layoutWidth = trimmedWidth + (singleSpaceWidth * spaceCount)
+                    layoutWidth = trimmedWidth + (spaceWidth * spaceCount)
                 }
             }
             // -----------------------------
+
+            // 新增：如果需要高级动画，预先测量每个字符
+            val (charLayouts, charBounds) = if (useAwesomeAnimation) {
+                val layouts = syllable.content.map { char ->
+                    textMeasurer.measure(char.toString(), style)
+                }
+                val bounds = syllable.content.indices.map { index ->
+                    layoutResult.getBoundingBox(index)
+                }
+                layouts to bounds
+            } else {
+                null to null
+            }
 
             SyllableLayout(
                 syllable = syllable,
                 textLayoutResult = layoutResult,
                 wordId = wordIndex,
                 useAwesomeAnimation = useAwesomeAnimation,
-                width = layoutWidth // 使用修正后的宽度
+                width = layoutWidth, // 使用修正后的宽度
+                charLayouts = charLayouts,      // 存入缓存
+                charOriginalBounds = charBounds // 存入缓存
             )
         }
     }
@@ -474,6 +498,22 @@ fun DrawScope.drawLine(
     lineLayouts.forEach { rowLayouts ->
         if (rowLayouts.isEmpty()) return@forEach
 
+        val firstSyllableStart = rowLayouts.first().syllable.start
+        val lastSyllableEnd = rowLayouts.last().syllable.end
+
+        // 优化 A: 还没开始唱的行 -> 直接画暗色，不使用 saveLayer
+        if (currentTimeMs < firstSyllableStart) {
+            drawRowText(rowLayouts, color.copy(alpha = 0.2f), blendMode, showDebugRectangles, currentTimeMs)
+            return@forEach
+        }
+
+        // 优化 B: 已经唱完的行 -> 直接画亮色，不使用 saveLayer
+        if (currentTimeMs >= lastSyllableEnd) {
+            drawRowText(rowLayouts, color, blendMode, showDebugRectangles, currentTimeMs)
+            return@forEach
+        }
+
+        // 优化 C: 只有正在唱的行 -> 才开销 saveLayer 做渐变遮罩
         val minX = rowLayouts.minOf { it.position.x }
         val maxX = rowLayouts.maxOf { it.position.x + it.width }
         val minY = rowLayouts.minOf { it.position.y }
@@ -489,127 +529,13 @@ fun DrawScope.drawLine(
                 right = maxX + horizontalPadding,
                 bottom = minY + totalHeight + verticalPadding
             )
-            canvas.saveLayer(layerBounds, Paint())
+            // 传入 null paint 节省对象分配
+            canvas.saveLayer(layerBounds, LayerPaint)
 
-            rowLayouts.forEachIndexed { index, syllableLayout ->
-                val wordAnimInfo = syllableLayout.wordAnimInfo
+            // 绘制白色底文字
+            drawRowText(rowLayouts, color, blendMode, showDebugRectangles, currentTimeMs)
 
-                if (wordAnimInfo != null) {
-                    val textStyle = syllableLayout.textLayoutResult.layoutInput.style
-                    val fastCharAnimationThresholdMs = 200f
-                    val awesomeDuration = wordAnimInfo.wordDuration * 0.8f
-                    val originalLayout = syllableLayout.textLayoutResult
-
-                    syllableLayout.syllable.content.forEachIndexed { charIndex, char ->
-                        val absoluteCharIndex = syllableLayout.charOffsetInWord + charIndex
-                        val numCharsInWord = wordAnimInfo.wordContent.length
-                        val earliestStartTime = wordAnimInfo.wordStartTime
-                        val latestStartTime = wordAnimInfo.wordEndTime - awesomeDuration
-
-                        val charRatio =
-                            if (numCharsInWord > 1) absoluteCharIndex.toFloat() / (numCharsInWord - 1) else 0.5f
-                        val awesomeStartTime =
-                            (earliestStartTime + (latestStartTime - earliestStartTime) * charRatio).toLong()
-                        val awesomeProgress =
-                            ((currentTimeMs - awesomeStartTime).toFloat() / awesomeDuration).coerceIn(
-                                0f, 1f
-                            )
-
-                        val floatOffset = 4f * DipAndRise(
-                            dip = ((0.5 * (wordAnimInfo.wordDuration - fastCharAnimationThresholdMs * numCharsInWord) / 1000)).coerceIn(
-                                0.0, 0.5
-                            )
-                        ).transform(1.0f - awesomeProgress)
-                        val scale = 1f + Swell(
-                            (0.1 * (wordAnimInfo.wordDuration - fastCharAnimationThresholdMs * numCharsInWord) / 1000).coerceIn(
-                                0.0, 0.1
-                            )
-                        ).transform(awesomeProgress)
-
-                        // Fix: 使用 getBoundingBox 获取物理坐标，支持 RTL
-                        val charBox = originalLayout.getBoundingBox(charIndex)
-                        val singleCharLayoutResult = textMeasurer.measure(char.toString(), style = textStyle)
-
-                        // 居中修正：(物理框宽 - 绘制字宽) / 2
-                        val centeredOffsetX = (charBox.width - singleCharLayoutResult.size.width) / 2f
-                        val xPos = syllableLayout.position.x + charBox.left + centeredOffsetX
-                        val yPos = syllableLayout.position.y + charBox.top + floatOffset
-
-                        val blurRadius = 10f * Bounce.transform(awesomeProgress)
-                        val shadow = Shadow(
-                            color = color.copy(0.4f),
-                            offset = Offset(0f, 0f),
-                            blurRadius = blurRadius
-                        )
-
-                        withTransform({ scale(scale = scale, pivot = syllableLayout.wordPivot) }) {
-                            drawText(
-                                textLayoutResult = singleCharLayoutResult,
-                                brush = Brush.horizontalGradient(0f to color, 1f to color),
-                                topLeft = Offset(xPos, yPos),
-                                shadow = shadow,
-                                blendMode = blendMode
-                            )
-                            if (showDebugRectangles) {
-                                drawRect(
-                                    color = Color.Red, topLeft = Offset(xPos, yPos), size = Size(
-                                        singleCharLayoutResult.size.width.toFloat(),
-                                        singleCharLayoutResult.size.height.toFloat()
-                                    ), style = Stroke(1f)
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    val driverLayout = if (syllableLayout.syllable.content.trim().isPunctuation()) {
-                        var searchIndex = index - 1
-                        while (searchIndex >= 0) {
-                            val candidate = rowLayouts[searchIndex]
-                            if (!candidate.syllable.content.trim().isPunctuation()) {
-                                candidate
-                                break
-                            }
-                            searchIndex--
-                        }
-                        // 如果找不到前一个实词（比如行首就是标点），就用自己
-                        if (searchIndex < 0) syllableLayout else rowLayouts[searchIndex]
-                    } else {
-                        syllableLayout
-                    }
-
-                    // 2. 【核心修改】使用固定时长计算进度
-                    val animationFixedDuration = 700f // 固定动画时长 700ms
-                    val timeSinceStart = currentTimeMs - driverLayout.syllable.start
-
-                    // 进度计算：不再乘以 duration 比例，而是直接除以固定时长
-                    // 这样即使 rap 只有 100ms，动画也会持续 700ms，从而与后面的字产生并行重叠
-                    val animationProgress = (timeSinceStart / animationFixedDuration).coerceIn(0f, 1f)
-
-                    val maxOffsetY = 4f
-                    val floatCurveValue = CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f).transform(1f - animationProgress)
-                    val floatOffset = maxOffsetY * floatCurveValue
-
-                    val finalPosition = syllableLayout.position.copy(
-                        y = syllableLayout.position.y + floatOffset
-                    )
-
-                    drawText(
-                        textLayoutResult = syllableLayout.textLayoutResult,
-                        brush = Brush.horizontalGradient(0f to color, 1f to color), // 这里假设纯色，如果需要渐变可保持原样
-                        topLeft = finalPosition,
-                        blendMode = blendMode
-                    )
-                    if (showDebugRectangles) {
-                        drawRect(
-                            color = Color.Green, topLeft = finalPosition, size = Size(
-                                syllableLayout.textLayoutResult.size.width.toFloat(),
-                                syllableLayout.textLayoutResult.size.height.toFloat()
-                            ), style = Stroke(2f)
-                        )
-                    }
-                }
-            }
-
+            // 绘制进度遮罩 (DstIn)
             val progressBrush = createLineGradientBrush(rowLayouts, currentTimeMs, isRtl)
             drawRect(
                 brush = progressBrush,
@@ -622,13 +548,127 @@ fun DrawScope.drawLine(
     }
 }
 
+// 提取出的纯文本绘制逻辑 (去除 Canvas 操作)
+private fun DrawScope.drawRowText(
+    rowLayouts: List<SyllableLayout>,
+    drawColor: Color,
+    blendMode: BlendMode,
+    showDebugRectangles: Boolean,
+    currentTimeMs: Int
+) {
+    rowLayouts.forEachIndexed { index, syllableLayout ->
+        val wordAnimInfo = syllableLayout.wordAnimInfo
+
+        if (wordAnimInfo != null) {
+            val fastCharAnimationThresholdMs = 200f
+            val awesomeDuration = wordAnimInfo.wordDuration * 0.8f
+
+            // 使用缓存的 charLayouts 和 charOriginalBounds
+            val charLayouts = syllableLayout.charLayouts ?: emptyList()
+            val charBounds = syllableLayout.charOriginalBounds ?: emptyList()
+
+            syllableLayout.syllable.content.forEachIndexed { charIndex, _ ->
+                val singleCharLayoutResult = charLayouts.getOrNull(charIndex) ?: return@forEachIndexed
+                val charBox = charBounds.getOrNull(charIndex) ?: return@forEachIndexed
+
+                val absoluteCharIndex = syllableLayout.charOffsetInWord + charIndex
+                val numCharsInWord = wordAnimInfo.wordContent.length
+                val earliestStartTime = wordAnimInfo.wordStartTime
+                val latestStartTime = wordAnimInfo.wordEndTime - awesomeDuration
+
+                val charRatio = if (numCharsInWord > 1) absoluteCharIndex.toFloat() / (numCharsInWord - 1) else 0.5f
+                val awesomeStartTime = (earliestStartTime + (latestStartTime - earliestStartTime) * charRatio).toLong()
+                val awesomeProgress = ((currentTimeMs - awesomeStartTime).toFloat() / awesomeDuration).coerceIn(0f, 1f)
+
+                val floatOffset = 4f * DipAndRise(
+                    dip = ((0.5 * (wordAnimInfo.wordDuration - fastCharAnimationThresholdMs * numCharsInWord) / 1000)).coerceIn(0.0, 0.5)
+                ).transform(1.0f - awesomeProgress)
+                val scale = 1f + Swell(
+                    (0.1 * (wordAnimInfo.wordDuration - fastCharAnimationThresholdMs * numCharsInWord) / 1000).coerceIn(0.0, 0.1)
+                ).transform(awesomeProgress)
+
+                val centeredOffsetX = (charBox.width - singleCharLayoutResult.size.width) / 2f
+                val xPos = syllableLayout.position.x + charBox.left + centeredOffsetX
+                val yPos = syllableLayout.position.y + charBox.top + floatOffset
+
+                val blurRadius = 10f * Bounce.transform(awesomeProgress)
+                val shadow = Shadow(
+                    color = drawColor.copy(0.4f),
+                    offset = Offset(0f, 0f),
+                    blurRadius = blurRadius
+                )
+
+                withTransform({ scale(scale = scale, pivot = syllableLayout.wordPivot) }) {
+                    drawText(
+                        textLayoutResult = singleCharLayoutResult,
+                        color = drawColor,
+                        topLeft = Offset(xPos, yPos),
+                        shadow = shadow,
+                        blendMode = blendMode
+                    )
+                    if (showDebugRectangles) {
+                        drawRect(
+                            color = Color.Red, topLeft = Offset(xPos, yPos), size = Size(
+                                singleCharLayoutResult.size.width.toFloat(),
+                                singleCharLayoutResult.size.height.toFloat()
+                            ), style = Stroke(1f)
+                        )
+                    }
+                }
+            }
+        } else {
+            val driverLayout = if (syllableLayout.syllable.content.trim().isPunctuation()) {
+                var searchIndex = index - 1
+                while (searchIndex >= 0) {
+                    val candidate = rowLayouts[searchIndex]
+                    if (!candidate.syllable.content.trim().isPunctuation()) {
+                        break
+                    }
+                    searchIndex--
+                }
+                if (searchIndex < 0) syllableLayout else rowLayouts[searchIndex]
+            } else {
+                syllableLayout
+            }
+
+            val animationFixedDuration = 700f
+            val timeSinceStart = currentTimeMs - driverLayout.syllable.start
+            val animationProgress = (timeSinceStart / animationFixedDuration).coerceIn(0f, 1f)
+
+            val maxOffsetY = 4f
+            val floatCurveValue = CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f).transform(1f - animationProgress)
+            val floatOffset = maxOffsetY * floatCurveValue
+
+            val finalPosition = syllableLayout.position.copy(
+                y = syllableLayout.position.y + floatOffset
+            )
+
+            drawText(
+                textLayoutResult = syllableLayout.textLayoutResult,
+                color = drawColor,
+                topLeft = finalPosition,
+                blendMode = blendMode
+            )
+            if (showDebugRectangles) {
+                drawRect(
+                    color = Color.Green, topLeft = finalPosition, size = Size(
+                        syllableLayout.textLayoutResult.size.width.toFloat(),
+                        syllableLayout.textLayoutResult.size.height.toFloat()
+                    ), style = Stroke(2f)
+                )
+            }
+        }
+    }
+}
+
 @Stable
 @Composable
 fun KaraokeLineText(
     line: KaraokeLine,
     onLineClicked: (ISyncedLine) -> Unit,
     onLinePressed: (ISyncedLine) -> Unit,
-    currentTimeMs: Int,
+    currentTimeProvider: () -> Int,
+    isFocused: Boolean,
     modifier: Modifier = Modifier,
     activeColor: Color = Color.White,
     normalLineTextStyle: TextStyle,
@@ -641,7 +681,6 @@ fun KaraokeLineText(
         line.syllables.any { it.content.isRtl() }
     }
 
-    val isFocused = line.isFocused(currentTimeMs)
     val textMeasurer = rememberTextMeasurer()
 
     // 2. 核心对齐逻辑计算
@@ -678,7 +717,7 @@ fun KaraokeLineText(
         if (isRightAligned) Alignment.End else Alignment.Start
     }
 
-    val animatedScale by animateFloatAsState(
+    val animatedScaleState = animateFloatAsState(
         targetValue = if (isFocused) 1f else 0.98f, animationSpec = if (isFocused) {
             androidx.compose.animation.core.tween(
                 durationMillis = 600, easing = LinearOutSlowInEasing
@@ -689,7 +728,7 @@ fun KaraokeLineText(
             )
         }, label = "scale"
     )
-    val animatedAlpha by animateFloatAsState(
+    val animatedAlphaState = animateFloatAsState(
         targetValue = if (!line.isAccompaniment) if (isFocused) 1f else 0.4f else if (isFocused) 0.6f else 0.2f,
         label = "alpha"
     )
@@ -708,15 +747,15 @@ fun KaraokeLineText(
                 .fillMaxWidth() // 关键：始终占满宽度，不使用 align 移动 Column
                 .padding(vertical = 8.dp, horizontal = 16.dp)
                 .graphicsLayer {
-                    scaleX = animatedScale
-                    scaleY = animatedScale
+                    scaleX = animatedScaleState.value
+                    scaleY = animatedScaleState.value
                     transformOrigin = scaleTransformOrigin
                 },
             verticalArrangement = Arrangement.spacedBy(2.dp),
             horizontalAlignment = columnHorizontalAlignment // 控制翻译文本的位置
         ) {
             BoxWithConstraints(Modifier.graphicsLayer {
-                alpha = animatedAlpha
+                alpha = animatedAlphaState.value
             }) {
                 val density = LocalDensity.current
                 val availableWidthPx = with(density) { maxWidth.toPx() }
@@ -724,6 +763,10 @@ fun KaraokeLineText(
                 val textStyle = remember(line.isAccompaniment) {
                     val baseStyle = if (line.isAccompaniment) accompanimentLineTextStyle else normalLineTextStyle
                     baseStyle.copy(textDirection = TextDirection.Content)
+                }
+
+                val spaceWidth = remember(textMeasurer, textStyle) {
+                    textMeasurer.measure(" ", textStyle).size.width.toFloat()
                 }
 
                 val processedSyllables = remember(line.syllables, line.alignment) {
@@ -742,7 +785,8 @@ fun KaraokeLineText(
                             syllables = processedSyllables,
                             textMeasurer = textMeasurer,
                             style = textStyle,
-                            isAccompanimentLine = line.isAccompaniment
+                            isAccompanimentLine = line.isAccompaniment,
+                            spaceWidth = spaceWidth
                         )
                     }
                 }
@@ -779,9 +823,10 @@ fun KaraokeLineText(
 
                 // Canvas 始终填满 BoxWithConstraints 给的宽度 (maxWidth)
                 Canvas(modifier = Modifier.size(maxWidth, (totalHeight.roundToInt() + 8).toDp())) {
+                    val time = currentTimeProvider()
                     drawLine(
                         lineLayouts = finalLineLayouts,
-                        currentTimeMs = currentTimeMs,
+                        currentTimeMs = time,
                         color = activeColor,
                         textMeasurer = textMeasurer,
                         blendMode = blendMode,

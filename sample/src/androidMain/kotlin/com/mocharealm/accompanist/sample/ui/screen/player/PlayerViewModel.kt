@@ -259,8 +259,9 @@ class PlayerViewModel(
         }
     }
 
-    fun seekTo(position: Long) {
+    fun seekTo(position: Int) {
         val controller = mediaController ?: return
+        val position = position.toLong()
         controller.seekTo(position)
         updateState { currentState ->
             currentState.copy(

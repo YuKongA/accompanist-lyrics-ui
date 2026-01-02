@@ -1,5 +1,8 @@
 package com.mocharealm.accompanist.sample.ui.screen.player
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
@@ -29,8 +32,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,7 +43,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -50,11 +57,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextMotion
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.media3.common.MediaItem
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
@@ -72,20 +81,11 @@ import com.mocharealm.accompanist.sample.ui.screen.share.ShareViewModel
 import com.mocharealm.accompanist.sample.ui.theme.SFPro
 import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.imageResource
 import org.jetbrains.compose.resources.painterResource
 import org.koin.compose.viewmodel.koinViewModel
 import kotlin.math.abs
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.platform.LocalContext
-import androidx.media3.common.MediaItem
-import kotlinx.coroutines.launch
 
 
 @Composable
@@ -94,7 +94,12 @@ fun PlayerScreen(
     shareViewModel: ShareViewModel = koinViewModel(),
 ) {
     val listState = rememberLazyListState()
-    var animatedPosition by remember { mutableLongStateOf(0L) }
+    val animatedPositionState = remember { mutableLongStateOf(0L) }
+
+    // 2. 创建一个稳定的 Provider Lambda，它只会在真正被调用时读取 State
+    val currentPositionProvider = remember {
+        { animatedPositionState.longValue.toInt() }
+    }
 
     val uiState by playerViewModel.uiState.collectAsState()
     val latestPlaybackState by rememberUpdatedState(uiState.playbackState)
@@ -106,12 +111,19 @@ fun PlayerScreen(
                 val newPosition = (latestPlaybackState.position + elapsed).coerceAtMost(
                     latestPlaybackState.duration
                 )
-                if (animatedPosition <= newPosition || abs(newPosition - animatedPosition) >= 100) animatedPosition =
-                    newPosition
+
+                // 读取当前值用于比较
+                val currentAnimPos = animatedPositionState.longValue
+
+                if (currentAnimPos <= newPosition || abs(newPosition - currentAnimPos) >= 100) {
+                    // 更新 State 对象的值，这不会导致当前 Composable (PlayerScreen) 重组，
+                    // 但会通知读取了该 State 的下游 DrawScope (例如 KaraokeLyricsView 中的 Canvas) 刷新
+                    animatedPositionState.longValue = newPosition
+                }
                 awaitFrame()
             }
         } else {
-            animatedPosition = latestPlaybackState.position
+            animatedPositionState.longValue = latestPlaybackState.position
         }
     }
 
@@ -136,7 +148,7 @@ fun PlayerScreen(
                 WindowLayoutType.Phone -> {
                     MobilePlayerScreen(
                         listState,
-                        animatedPosition,
+                        currentPositionProvider, // 3. 传入 Provider
                         playerViewModel,
                         shareViewModel,
                         uiState
@@ -146,7 +158,7 @@ fun PlayerScreen(
                 else -> {
                     PadPlayerScreen(
                         listState,
-                        animatedPosition,
+                        currentPositionProvider, // 3. 传入 Provider
                         playerViewModel,
                         shareViewModel,
                         uiState
@@ -170,7 +182,7 @@ fun PlayerScreen(
 @Composable
 fun MobilePlayerScreen(
     listState: LazyListState,
-    animatedPosition: Long,
+    animatedPosition: ()-> Int,
     playerViewModel: PlayerViewModel,
     shareViewModel: ShareViewModel,
     uiState: PlayerUiState
@@ -246,7 +258,7 @@ fun MobilePlayerScreen(
 @Composable
 fun PadPlayerScreen(
     listState: LazyListState,
-    animatedPosition: Long,
+    animatedPosition: ()-> Int,
     playerViewModel: PlayerViewModel,
     shareViewModel: ShareViewModel,
     uiState: PlayerUiState
@@ -347,48 +359,60 @@ fun CustomSongSelectionDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    
+
     var audioUri by remember { mutableStateOf<Uri?>(null) }
     var lyricsUri by remember { mutableStateOf<Uri?>(null) }
     var translationUri by remember { mutableStateOf<Uri?>(null) }
-    
+
     var audioName by remember { mutableStateOf("Select Audio") }
     var lyricsName by remember { mutableStateOf("Select Lyrics") }
     var translationName by remember { mutableStateOf("Select Translation (Optional)") }
 
-    val audioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let {
-            audioUri = it
-            audioName = it.path?.split("/")?.last() ?: "Audio Selected"
+    val audioLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            uri?.let {
+                audioUri = it
+                audioName = it.path?.split("/")?.last() ?: "Audio Selected"
+            }
         }
-    }
-    
-    val lyricsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let {
-            lyricsUri = it
-            lyricsName = it.path?.split("/")?.last() ?: "Lyrics Selected"
+
+    val lyricsLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            uri?.let {
+                lyricsUri = it
+                lyricsName = it.path?.split("/")?.last() ?: "Lyrics Selected"
+            }
         }
-    }
-    
-    val translationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let {
-            translationUri = it
-            translationName = it.path?.split("/")?.last() ?: "Translation Selected"
+
+    val translationLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+            uri?.let {
+                translationUri = it
+                translationName = it.path?.split("/")?.last() ?: "Translation Selected"
+            }
         }
-    }
 
     AlertDialog(
         onDismissRequest = onDismissRequest,
         title = { Text("Custom Song Selection") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { audioLauncher.launch("audio/*") }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { audioLauncher.launch("audio/*") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(audioName)
                 }
-                OutlinedButton(onClick = { lyricsLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { lyricsLauncher.launch("*/*") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(lyricsName)
                 }
-                OutlinedButton(onClick = { translationLauncher.launch("*/*") }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { translationLauncher.launch("*/*") },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(translationName)
                 }
             }
@@ -398,11 +422,13 @@ fun CustomSongSelectionDialog(
                 onClick = {
                     if (audioUri != null && lyricsUri != null) {
                         scope.launch {
-                            val lyricsContent = context.contentResolver.openInputStream(lyricsUri!!)?.bufferedReader()?.use { it.readText() } ?: ""
-                            val translationContent = translationUri?.let { 
-                                context.contentResolver.openInputStream(it)?.bufferedReader()?.use { it.readText() }
+                            val lyricsContent = context.contentResolver.openInputStream(lyricsUri!!)
+                                ?.bufferedReader()?.use { it.readText() } ?: ""
+                            val translationContent = translationUri?.let {
+                                context.contentResolver.openInputStream(it)?.bufferedReader()
+                                    ?.use { it.readText() }
                             }
-                            
+
                             val item = MusicItem(
                                 label = audioName,
                                 testTarget = "Custom Selection",
@@ -435,13 +461,13 @@ fun MusicItemSelectionDialog(
     onDismissRequest: () -> Unit
 ) {
     var showCustomDialog by remember { mutableStateOf(false) }
-    
+
     if (showCustomDialog) {
         CustomSongSelectionDialog(
             onDismissRequest = { showCustomDialog = false },
-            onSongSelected = { 
+            onSongSelected = {
                 showCustomDialog = false
-                onItemSelected(it) 
+                onItemSelected(it)
             }
         )
     } else {
@@ -454,7 +480,9 @@ fun MusicItemSelectionDialog(
                     item {
                         OutlinedButton(
                             onClick = { showCustomDialog = true },
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
                         ) {
                             Text("Select Custom File...")
                         }
@@ -554,8 +582,8 @@ fun PlayerControls(
 fun PlayerLyrics(
     listState: LazyListState,
     lyrics: SyncedLyrics?,
-    currentPosition: Long,
-    onSeekTo: (Long) -> Unit,
+    currentPosition: () -> Int,
+    onSeekTo: (Int) -> Unit,
     onShare: (KaraokeLine) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -565,7 +593,7 @@ fun PlayerLyrics(
         listState = listState,
         lyrics = lyrics,
         currentPosition = currentPosition,
-        onLineClicked = { line -> onSeekTo(line.start.toLong()) },
+        onLineClicked = { line -> onSeekTo(line.start) },
         onLinePressed = { line -> onShare(line as KaraokeLine) },
         normalLineTextStyle = LocalTextStyle.current.copy(
             fontSize = 34.sp,

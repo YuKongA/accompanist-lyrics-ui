@@ -42,35 +42,35 @@ fun BoxScope.FlowingLightBackground(
     state: BackgroundVisualState,
     modifier: Modifier = Modifier
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "background_animation")
-
-    val rotation1 by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(50000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "rotation1"
-    )
-    val rotation2 by infiniteTransition.animateFloat(
-        initialValue = 360f,
-        targetValue = 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(40000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "rotation2"
-    )
-    val rotation3 by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(48000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "rotation3"
-    )
+//    val infiniteTransition = rememberInfiniteTransition(label = "background_animation")
+//
+//    val rotation1 by infiniteTransition.animateFloat(
+//        initialValue = 0f,
+//        targetValue = 360f,
+//        animationSpec = infiniteRepeatable(
+//            animation = tween(50000, easing = LinearEasing),
+//            repeatMode = RepeatMode.Restart
+//        ),
+//        label = "rotation1"
+//    )
+//    val rotation2 by infiniteTransition.animateFloat(
+//        initialValue = 360f,
+//        targetValue = 0f,
+//        animationSpec = infiniteRepeatable(
+//            animation = tween(40000, easing = LinearEasing),
+//            repeatMode = RepeatMode.Restart
+//        ),
+//        label = "rotation2"
+//    )
+//    val rotation3 by infiniteTransition.animateFloat(
+//        initialValue = 0f,
+//        targetValue = 360f,
+//        animationSpec = infiniteRepeatable(
+//            animation = tween(48000, easing = LinearEasing),
+//            repeatMode = RepeatMode.Restart
+//        ),
+//        label = "rotation3"
+//    )
 
     AnimatedContent(
         state.bitmap ?: imageResource(Res.drawable.empty),
@@ -112,7 +112,8 @@ fun BoxScope.FlowingLightBackground(
                     .align(Alignment.TopStart)
                     .offset((-150).dp, (-150).dp)
                     .scale(2.5f)
-                    .graphicsLayer { rotationZ = rotation1 },
+//                    .graphicsLayer { rotationZ = rotation1 }
+                ,
                 blurRadius = 80.dp
             )
 
@@ -123,10 +124,11 @@ fun BoxScope.FlowingLightBackground(
                 modifier = baseModifier
                     .align(Alignment.Center)
                     .scale(1.5f)
-                    .graphicsLayer {
-                        rotationZ = rotation2
-                        transformOrigin = TransformOrigin(0.3f, 0.52f)
-                    },
+//                    .graphicsLayer {
+//                        rotationZ = rotation2
+//                        transformOrigin = TransformOrigin(0.3f, 0.52f)
+//                    }
+                ,
                 blurRadius = 100.dp
             )
 
@@ -138,10 +140,11 @@ fun BoxScope.FlowingLightBackground(
                     .align(Alignment.BottomEnd)
                     .offset((150).dp, (150).dp)
                     .scale(2f)
-                    .graphicsLayer {
-                        rotationZ = rotation3
-                        translationX = 50f
-                    },
+//                    .graphicsLayer {
+//                        rotationZ = rotation3
+//                        translationX = 50f
+//                    }
+                ,
                 blurRadius = 150.dp
             )
         }
