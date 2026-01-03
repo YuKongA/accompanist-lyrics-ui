@@ -145,7 +145,7 @@ private fun createLineGradientBrush(
     )
 }
 
-fun DrawScope.drawLine(
+fun DrawScope.drawLyricsLine(
     lineLayouts: List<List<SyllableLayout>>,
     currentTimeMs: Int,
     color: Color,
@@ -248,7 +248,6 @@ private fun DrawScope.drawRowText(
                         color = drawColor,
                         topLeft = Offset(xPos, yPos),
                         shadow = shadow,
-                        blendMode = blendMode
                     )
                     if (showDebugRectangles) {
                         drawRect(
@@ -291,7 +290,6 @@ private fun DrawScope.drawRowText(
                 textLayoutResult = syllableLayout.textLayoutResult,
                 color = drawColor,
                 topLeft = finalPosition,
-                blendMode = blendMode
             )
             if (showDebugRectangles) {
                 drawRect(
@@ -437,7 +435,6 @@ fun KaraokeLineText(
                     }
                 }
 
-
                 val wrappedLines by remember {
                     derivedStateOf {
                         calculateBalancedLines(
@@ -453,7 +450,6 @@ fun KaraokeLineText(
                     textMeasurer.measure("M", textStyle).size.height.toFloat()
                 }
 
-                // 传入 isRightAligned，完全由 calculateStaticLineLayout 计算 X 坐标
                 val finalLineLayouts = remember(wrappedLines, availableWidthPx, lineHeight, isRtl, isRightAligned) {
                     calculateStaticLineLayout(
                         wrappedLines = wrappedLines,
@@ -468,10 +464,9 @@ fun KaraokeLineText(
                     lineHeight * wrappedLines.size
                 }
 
-                // Canvas 始终填满 BoxWithConstraints 给的宽度 (maxWidth)
                 Canvas(modifier = Modifier.size(maxWidth, (totalHeight.roundToInt() + 8).toDp())) {
                     val time = currentTimeProvider()
-                    drawLine(
+                    drawLyricsLine(
                         lineLayouts = finalLineLayouts,
                         currentTimeMs = time,
                         color = activeColor,
@@ -500,4 +495,3 @@ fun KaraokeLineText(
 
 @Composable
 private fun Int.toDp(): Dp = with(LocalDensity.current) { this@toDp.toDp() }
-

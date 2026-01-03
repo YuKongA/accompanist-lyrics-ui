@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.core.EaseInOut
-import androidx.compose.animation.core.EaseInOutCubic
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -17,10 +16,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -96,6 +93,12 @@ fun KaraokeLyricsView(
     ),
     textColor: Color = Color.White,
     breathingDotsDefaults: KaraokeBreathingDotsDefaults = KaraokeBreathingDotsDefaults(),
+    verticalFadeBrush: Brush = Brush.verticalGradient(
+        0f to Color.White.copy(0f),
+        0.05f to Color.White,
+        0.6f to Color.White,
+        1f to Color.White.copy(0f)
+    ),
     blendMode: BlendMode = BlendMode.Plus,
     useBlurEffect: Boolean = true,
     showDebugRectangles: Boolean = false
@@ -112,17 +115,20 @@ fun KaraokeLyricsView(
         layoutCache.clear()
         withContext(Dispatchers.Default) {
             val normalStyle = stableNormalTextStyle.copy(textDirection = TextDirection.Content)
-            val accompanimentStyle = stableAccompanimentTextStyle.copy(textDirection = TextDirection.Content)
-            
+            val accompanimentStyle =
+                stableAccompanimentTextStyle.copy(textDirection = TextDirection.Content)
+
             val normalSpaceWidth = textMeasurer.measure(" ", normalStyle).size.width.toFloat()
-            val accompanimentSpaceWidth = textMeasurer.measure(" ", accompanimentStyle).size.width.toFloat()
+            val accompanimentSpaceWidth =
+                textMeasurer.measure(" ", accompanimentStyle).size.width.toFloat()
 
             lyrics.lines.forEachIndexed { index, line ->
                 if (!isActive) return@forEachIndexed
                 if (line is KaraokeLine) {
                     val style = if (line.isAccompaniment) accompanimentStyle else normalStyle
-                    val spaceWidth = if (line.isAccompaniment) accompanimentSpaceWidth else normalSpaceWidth
-                    
+                    val spaceWidth =
+                        if (line.isAccompaniment) accompanimentSpaceWidth else normalSpaceWidth
+
                     val processedSyllables = if (line.alignment == KaraokeAlignment.End) {
                         line.syllables.dropLastWhile { it.content.isBlank() }
                     } else {
@@ -136,7 +142,7 @@ fun KaraokeLyricsView(
                         isAccompanimentLine = line.isAccompaniment,
                         spaceWidth = spaceWidth
                     )
-                    
+
                     withContext(Dispatchers.Main) {
                         layoutCache[index] = layout
                     }
@@ -149,13 +155,9 @@ fun KaraokeLyricsView(
 
     val timeProvider = remember { currentPosition }
 
-    val rawFirstFocusedLineIndexState = remember(lyrics) {
-        derivedStateOf { lyrics.getCurrentFirstHighlightLineIndexByTime(currentTimeMs()) }
-    }
-
-    val finalFirstFocusedLineIndex by remember(lyrics.lines) {
+    val firstFocusedLineIndex by remember(lyrics.lines) {
         derivedStateOf {
-            val rawIndex = rawFirstFocusedLineIndexState.value
+            val rawIndex = lyrics.getCurrentFirstHighlightLineIndexByTime(currentTimeMs())
             val line = lyrics.lines.getOrNull(rawIndex) as? KaraokeLine
             if (line != null && line.isAccompaniment) {
                 var newIndex = rawIndex
@@ -191,35 +193,21 @@ fun KaraokeLyricsView(
         }
     }
 
-    var isScrollProgrammatically by remember { mutableStateOf(false) }
+    val firstLine = lyrics.lines.firstOrNull()
 
-    val isUserInteracting by remember {
-        derivedStateOf { listState.isScrollInProgress && !isScrollProgrammatically }
-    }
-
-    val headerItemCount = 1
-    val density = LocalDensity.current
-    val showDotInPause by remember(lyrics.lines) {
+    val haveDotsIntro by remember(firstLine) {
         derivedStateOf {
-            val currentTime = currentTimeMs()
-            lyrics.lines.indices.any { index ->
-                val line = lyrics.lines[index]
-                val previousLine = lyrics.lines.getOrNull(index - 1)
-                previousLine != null && (line.start - previousLine.end > 5000) && (currentTime in previousLine.end..line.start)
-            }
+            if (firstLine == null) false
+            else (firstLine.start > 5000)
         }
     }
-    val firstLine = lyrics.lines.firstOrNull() ?: SyncedLine("", null, 0, 0)
-    val showDotInIntro by remember(firstLine) {
-        derivedStateOf {
-            (firstLine.start > 5000) && (currentTimeMs() in 0 until firstLine.start)
-        }
-    }
+
     val allFocusedLineIndex by remember(lyrics) {
         derivedStateOf {
             lyrics.getCurrentAllHighlightLineIndicesByTime(currentTimeMs())
         }
     }
+
     val accompanimentVisibilityRanges = remember(lyrics.lines) {
         val map = mutableMapOf<Int, IntRange>()
         val mainLines = lyrics.lines.filter { it !is KaraokeLine || !it.isAccompaniment }
@@ -250,48 +238,12 @@ fun KaraokeLyricsView(
     }
 
     LaunchedEffect(
-        finalFirstFocusedLineIndex, showDotInPause
+        firstFocusedLineIndex
     ) {
-        if (isUserInteracting) return@LaunchedEffect
-        if (showDotInIntro) return@LaunchedEffect
-        if (showDotInPause) return@LaunchedEffect
-
-        val targetListIndex = finalFirstFocusedLineIndex + headerItemCount
-
-        if (finalFirstFocusedLineIndex < 0 || finalFirstFocusedLineIndex >= lyrics.lines.size) {
-            return@LaunchedEffect
-        }
-
-        isScrollProgrammatically = true
-        try {
-            val layoutInfo = listState.layoutInfo
-            val beforeContentPadding = layoutInfo.beforeContentPadding
-            val targetVisualY = (-beforeContentPadding.toFloat()) + with(density) { 46.dp.toPx() }
-
-            val visibleItems = layoutInfo.visibleItemsInfo
-            val targetItem = visibleItems.find { it.index == targetListIndex }
-
-            if (targetItem != null) {
-                val currentOffset = targetItem.offset
-
-                val delta = currentOffset - targetVisualY
-
-                if (abs(delta) > 5f) {
-                    listState.animateScrollBy(
-                        value = delta, animationSpec = tween(600, easing = EaseInOutCubic)
-                    )
-                }
-            } else {
-
-                val snapOffset = -10
-
-                listState.scrollToItem(
-                    index = targetListIndex, scrollOffset = snapOffset
-                )
-            }
-        } catch (_: Exception) {
-        } finally {
-            isScrollProgrammatically = false
+        if (listState.phase == ListScrollPhase.Idle) {
+            listState.animateScrollToItem(
+                firstFocusedLineIndex, 200
+            )
         }
     }
 
@@ -300,67 +252,42 @@ fun KaraokeLyricsView(
             LazyColumn(
                 state = listState,
                 modifier = modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = 300.dp)
             ) {
-                item(key = "intro-dots") {
-                    AnimatedVisibility(
-                        visible = showDotInIntro,
-                        enter = expandVertically() + fadeIn(),
-                        exit = shrinkVertically() + fadeOut()
-                    ) {
-                        KaraokeBreathingDots(
-                            alignment = (firstLine as? KaraokeLine)?.alignment
-                                ?: KaraokeAlignment.Start,
-                            startTimeMs = 0,
-                            endTimeMs = firstLine.start,
-                            currentTimeProvider = timeProvider,
-                            defaults = breathingDotsDefaults
-                        )
-                    }
-                }
-
                 itemsIndexed(
                     items = lyrics.lines,
                     key = { index, line -> "${line.start}-${line.end}-$index" }
                 ) { index, line ->
                     val isCurrentFocusLine by rememberUpdatedState(index in allFocusedLineIndex)
 
-//                val positionToFocusedLine = remember(index, allFocusedLineIndex) {
-//                    val pos = if (isCurrentFocusLine) 0
-//                    else if (allFocusedLineIndex.isNotEmpty() && index > allFocusedLineIndex.last()) index - allFocusedLineIndex.last()
-//                    else if (allFocusedLineIndex.isNotEmpty() && index < allFocusedLineIndex.first()) allFocusedLineIndex.first() - index
-//                    else 2
-//                    pos.toFloat()
-//                }
-
-//                val blurRadiusState = if (useBlurEffect) {
-//                    animateDpAsState(
-//                        targetValue = if (isUserInteracting) 0.dp else positionToFocusedLine.coerceAtMost(
-//                            10f
-//                        ).dp, label = "blur"
-//                    )
-//                } else remember { mutableStateOf(0.dp) }
-
-                    val listIndex = index + headerItemCount
-                    Column(modifier = Modifier.fillMaxWidth().dynamicFadingEdge(listState, listIndex)) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
                         val animDuration = 600
 
                         val previousLine = lyrics.lines.getOrNull(index - 1)
-                        val showDotInPause by remember(line, previousLine) {
+
+                        val showDotsInterlude by remember(line, previousLine) {
                             derivedStateOf {
-                                val currentTime = currentTimeMs()
-                                previousLine != null && (line.start - previousLine.end > 5000) && (currentTime in previousLine.end..line.start)
+                                val currentTime = currentPosition()
+                                (previousLine != null && (line.start - previousLine.end > 5000) && (currentTime in previousLine.end..line.start))
                             }
                         }
-                        AnimatedVisibility(showDotInPause) {
+                        val showDotsIntro by remember(firstLine) {
+                            derivedStateOf {
+                                haveDotsIntro && (currentTimeMs() in 0 until firstLine!!.start) && index == 0
+                            }
+                        }
+
+                        AnimatedVisibility(showDotsInterlude || showDotsIntro) {
                             KaraokeBreathingDots(
-                                alignment = (line as? KaraokeLine)?.alignment
-                                    ?: KaraokeAlignment.Start,
-                                startTimeMs = previousLine!!.end,
-                                endTimeMs = line.start,
+                                alignment = when (val line = previousLine ?: firstLine) {
+                                    is KaraokeLine -> line.alignment
+                                    is SyncedLine -> if (line.content.isRtl()) KaraokeAlignment.End else KaraokeAlignment.Start
+                                    else -> KaraokeAlignment.Start
+                                },
+                                startTimeMs = previousLine?.end ?: 0,
+                                endTimeMs = if (showDotsIntro) firstLine!!.start else line.start,
                                 currentTimeProvider = timeProvider,
                                 defaults = breathingDotsDefaults,
-                                modifier = Modifier.padding(vertical = 8.dp)
+                                modifier = Modifier.padding(vertical = 12.dp)
                             )
                         }
 
