@@ -140,7 +140,6 @@ fun calculateGreedyWrappedLines(
     val currentLine = mutableListOf<SyllableLayout>()
     var currentLineWidth = 0f
 
-    // 1. 先按 wordId 将音节分组
     val wordGroups = mutableListOf<List<SyllableLayout>>()
     if (syllableLayouts.isNotEmpty()) {
         var currentWordGroup = mutableListOf<SyllableLayout>()
@@ -157,7 +156,7 @@ fun calculateGreedyWrappedLines(
         wordGroups.add(currentWordGroup)
     }
 
-    // 2. 按单词进行排版
+    // 按单词进行排版
     wordGroups.forEach { wordSyllables ->
         val wordWidth = wordSyllables.sumOf { it.width.toDouble() }.toFloat()
 
@@ -182,7 +181,7 @@ fun calculateGreedyWrappedLines(
                 currentLine.addAll(wordSyllables)
                 currentLineWidth += wordWidth
             } else {
-                // 【特殊情况】单词超级长（比如德语符合词），比一整行还宽
+                // 特殊情况: 单词超级长（比如德语符合词），比一整行还宽
                 // 此时必须破坏单词完整性，退化回按音节换行
                 wordSyllables.forEach { syllable ->
                     if (currentLineWidth + syllable.width > availableWidthPx && currentLine.isNotEmpty()) {
@@ -308,7 +307,6 @@ fun calculateStaticLineLayout(
         }
     }
 
-    // --- 以下保持原样 ---
     val animInfoByWord = mutableMapOf<Int, WordAnimationInfo>()
     val charOffsetsBySyllable = mutableMapOf<SyllableLayout, Int>()
 
