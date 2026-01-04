@@ -19,13 +19,14 @@ data class SyllableLayout(
     val textLayoutResult: TextLayoutResult,
     val wordId: Int,
     val useAwesomeAnimation: Boolean,
-    val width: Float = textLayoutResult.size.width.toFloat(), // 允许覆盖宽度
+    val width: Float = textLayoutResult.size.width.toFloat(),
     val position: Offset = Offset.Zero,
     val wordPivot: Offset = Offset.Zero,
     val wordAnimInfo: WordAnimationInfo? = null,
     val charOffsetInWord: Int = 0,
-    val charLayouts: List<TextLayoutResult>? = null, // 新增：缓存每个字符的测量结果
-    val charOriginalBounds: List<Rect>? = null       // 新增：缓存每个字符的原始位置
+    val charLayouts: List<TextLayoutResult>? = null,
+    val charOriginalBounds: List<Rect>? = null,
+    val firstBaseline: Float = 0f,
 )
 
 @Stable
@@ -122,7 +123,8 @@ fun measureSyllablesAndDetermineAnimation(
                 useAwesomeAnimation = useAwesomeAnimation,
                 width = layoutWidth, // 使用修正后的宽度
                 charLayouts = charLayouts,      // 存入缓存
-                charOriginalBounds = charBounds // 存入缓存
+                charOriginalBounds = charBounds,
+                firstBaseline = layoutResult.firstBaseline
             )
         }
     }
@@ -271,7 +273,8 @@ fun calculateStaticLineLayout(
     val layoutsByWord = mutableMapOf<Int, MutableList<SyllableLayout>>()
 
     val positionedLines = wrappedLines.mapIndexed { lineIndex, wrappedLine ->
-        val lineY = lineIndex * lineHeight
+        val maxBaselineInLine = wrappedLine.syllables.maxOfOrNull { it.firstBaseline } ?: 0f
+        val rowTopY = lineIndex * lineHeight
 
         // 核心逻辑：如果是右对齐，起始点 = 画布宽 - 行宽。否则为 0。
         val startX = if (isLineRightAligned) {
@@ -289,8 +292,9 @@ fun calculateStaticLineLayout(
             } else {
                 currentX
             }
-
-            val positionedLayout = initialLayout.copy(position = Offset(positionX, lineY))
+            val verticalOffset = maxBaselineInLine - initialLayout.firstBaseline
+            val positionY = rowTopY + verticalOffset
+            val positionedLayout = initialLayout.copy(position = Offset(positionX, positionY))
             layoutsByWord.getOrPut(positionedLayout.wordId) { mutableListOf() }
                 .add(positionedLayout)
 
