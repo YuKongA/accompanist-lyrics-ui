@@ -41,7 +41,6 @@ kotlin {
                 implementation(compose.components.uiToolingPreview)
 
                 implementation(libs.gaze.capsule)
-                implementation(libs.gaze.glassy.core)
 
                 implementation(libs.accompanist.lyrics.core)
 
