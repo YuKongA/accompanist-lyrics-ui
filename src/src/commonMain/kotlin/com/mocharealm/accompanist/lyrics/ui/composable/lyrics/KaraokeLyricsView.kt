@@ -279,6 +279,41 @@ fun KaraokeLyricsView(
                         )
                     }
 
+                    val nextPendingLineIndex by remember(lyrics, currentTimeMs()) {
+                        derivedStateOf {
+                            val time = currentTimeMs()
+                            val index = lyrics.lines.indexOfFirst { it.start > time }
+                            if (index == -1) lyrics.lines.size - 1 else index
+                        }
+                    }
+
+                    val distanceWeightState = remember(useBlurEffect, allFocusedLineIndex, nextPendingLineIndex) {
+                        derivedStateOf {
+                            if (!useBlurEffect) return@derivedStateOf 0
+
+                            val (baseStart, baseEnd) = if (allFocusedLineIndex.isNotEmpty()) {
+                                allFocusedLineIndex.first() to allFocusedLineIndex.last()
+                            } else {
+                                nextPendingLineIndex to nextPendingLineIndex
+                            }
+
+                            when {
+                                index < baseStart -> baseStart - index
+                                index > baseEnd -> index - baseEnd
+                                else -> 0
+                            }.coerceAtMost(10)
+                        }
+                    }
+
+                    val blurRadiusState = animateFloatAsState(
+                        targetValue = if (distanceWeightState.value > 0 && (!listState.isScrollInProgress || scrollInCode.value)) {
+                            distanceWeightState.value * 4f
+                        } else {
+                            0f
+                        },
+                        animationSpec = tween(300),
+                    )
+
                     when (line) {
                         is KaraokeLine -> {
                             val isLineRtl =
@@ -289,68 +324,27 @@ fun KaraokeLyricsView(
                                     KaraokeAlignment.End -> !isLineRtl
                                 }
                             }
-                            val nextPendingLineIndex by remember(lyrics, currentTimeMs()) {
-                                derivedStateOf {
-                                    val time = currentTimeMs()
-                                    val index = lyrics.lines.indexOfFirst { it.start > time }
-                                    if (index == -1) lyrics.lines.size - 1 else index
-                                }
-                            }
-
-                            val distanceWeightState = remember(useBlurEffect, allFocusedLineIndex, nextPendingLineIndex) {
-                                derivedStateOf {
-                                    if (!useBlurEffect) return@derivedStateOf 0
-
-                                    val (baseStart, baseEnd) = if (allFocusedLineIndex.isNotEmpty()) {
-                                        allFocusedLineIndex.first() to allFocusedLineIndex.last()
-                                    } else {
-                                        nextPendingLineIndex to nextPendingLineIndex
-                                    }
-
-                                    when {
-                                        index < baseStart -> baseStart - index
-                                        index > baseEnd -> index - baseEnd
-                                        else -> 0
-                                    }.coerceAtMost(10)
-                                }
-                            }
-
-                            val blurRadiusState = animateFloatAsState(
-                                targetValue = if (distanceWeightState.value > 0 && (!listState.isScrollInProgress || scrollInCode.value)) {
-                                    distanceWeightState.value * 4f
-                                } else {
-                                    0f
-                                },
-                                animationSpec = tween(300),
-                            )
-
-                            val layoutModifier = Modifier
-                                .fillMaxWidth()
-                                .graphicsLayer {
-                                    if (useBlurEffect) {
-                                        renderEffect = BlurEffect(
-                                            radiusX =  blurRadiusState.value,
-                                            radiusY =  blurRadiusState.value,
-                                            edgeTreatment = TileMode.Clamp
-                                        )
-                                    }
-                                }
 
                             if (!line.isAccompaniment) {
-                                KaraokeLineText(
-                                    line = line,
-                                    onLineClicked = onLineClicked,
-                                    onLinePressed = onLinePressed,
-                                    currentTimeProvider = timeProvider,
+                                LyricsLineItem(
                                     isFocused = isCurrentFocusLine,
-                                    modifier = layoutModifier,
-                                    normalLineTextStyle = stableNormalTextStyle,
-                                    accompanimentLineTextStyle = stableAccompanimentTextStyle,
-                                    activeColor = textColor,
+                                    isRightAligned = isVisualRightAligned,
+                                    onLineClicked = { onLineClicked(line) },
+                                    onLinePressed = { onLinePressed(line) },
+                                    blurRadius = { blurRadiusState.value },
                                     blendMode = stableBlendMode,
-                                    showDebugRectangles = showDebugRectangles,
-                                    precalculatedLayouts = layoutCache[index]
-                                )
+                                ) {
+                                    KaraokeLineText(
+                                        line = line,
+                                        currentTimeProvider = timeProvider,
+                                        normalLineTextStyle = stableNormalTextStyle,
+                                        accompanimentLineTextStyle = stableAccompanimentTextStyle,
+                                        activeColor = textColor,
+                                        blendMode = stableBlendMode,
+                                        showDebugRectangles = showDebugRectangles,
+                                        precalculatedLayouts = layoutCache[index]
+                                    )
+                                }
                             } else {
                                 val visibilityRange = accompanimentVisibilityRanges[index]
                                 val isAccompanimentVisible by remember(visibilityRange) {
@@ -385,33 +379,47 @@ fun KaraokeLyricsView(
                                         )
                                     ) + shrinkVertically(tween(animDuration)),
                                 ) {
-                                    KaraokeLineText(
-                                        line = line,
-                                        onLineClicked = onLineClicked,
-                                        onLinePressed = onLinePressed,
-                                        currentTimeProvider = timeProvider,
+                                    LyricsLineItem(
                                         isFocused = isCurrentFocusLine,
-                                        modifier = layoutModifier.alpha(0.8f),
-                                        normalLineTextStyle = stableNormalTextStyle,
-                                        accompanimentLineTextStyle = stableAccompanimentTextStyle,
-                                        activeColor = textColor,
+                                        isRightAligned = isVisualRightAligned,
+                                        onLineClicked = { onLineClicked(line) },
+                                        onLinePressed = { onLinePressed(line) },
+                                        blurRadius = { blurRadiusState.value },
                                         blendMode = stableBlendMode,
-                                        precalculatedLayouts = layoutCache[index]
-                                    )
+                                        activeAlpha = 0.6f,
+                                        inactiveAlpha = 0.2f
+                                    ) {
+                                        KaraokeLineText(
+                                            line = line,
+                                            currentTimeProvider = timeProvider,
+                                            normalLineTextStyle = stableNormalTextStyle,
+                                            accompanimentLineTextStyle = stableAccompanimentTextStyle,
+                                            activeColor = textColor,
+                                            blendMode = stableBlendMode,
+                                            precalculatedLayouts = layoutCache[index]
+                                        )
+                                    }
                                 }
                             }
                         }
 
                         is SyncedLine -> {
-                            SyncedLineItem(
-                                line = line,
+                            val isLineRtl = remember(line.content) { line.content.isRtl() }
+                            LyricsLineItem(
                                 isFocused = isCurrentFocusLine,
-                                onLineClicked = onLineClicked,
-                                onLinePressed = onLinePressed,
-                                textStyle = stableNormalTextStyle.copy(lineHeight = 1.2.em),
-                                textColor = textColor,
-                                blendMode = stableBlendMode
-                            )
+                                isRightAligned = isLineRtl,
+                                onLineClicked = { onLineClicked(line) },
+                                onLinePressed = { onLinePressed(line) },
+                                blurRadius = { blurRadiusState.value },
+                                blendMode = stableBlendMode,
+                            ) {
+                                SyncedLineText(
+                                    line = line,
+                                    isLineRtl = isLineRtl,
+                                    textStyle = stableNormalTextStyle.copy(lineHeight = 1.2.em),
+                                    textColor = textColor,
+                                )
+                            }
                         }
                     }
                 }

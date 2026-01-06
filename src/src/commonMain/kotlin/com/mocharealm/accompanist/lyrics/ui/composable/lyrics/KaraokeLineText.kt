@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
@@ -37,6 +38,7 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -303,195 +305,131 @@ private fun DrawScope.drawRowText(
     }
 }
 
-@Stable
 @Composable
 fun KaraokeLineText(
     line: KaraokeLine,
-    onLineClicked: (ISyncedLine) -> Unit,
-    onLinePressed: (ISyncedLine) -> Unit,
     currentTimeProvider: () -> Int,
-    isFocused: Boolean,
     modifier: Modifier = Modifier,
+    normalLineTextStyle: TextStyle = LocalTextStyle.current,
+    accompanimentLineTextStyle: TextStyle = LocalTextStyle.current,
     activeColor: Color = Color.White,
-    normalLineTextStyle: TextStyle,
-    accompanimentLineTextStyle: TextStyle,
-    blendMode: BlendMode = BlendMode.Plus,
+    blendMode: BlendMode = BlendMode.SrcOver,
     showDebugRectangles: Boolean = false,
-    precalculatedLayouts: List<SyllableLayout>? = null
+    precalculatedLayouts: List<SyllableLayout>? = null,
+    textMeasurer: TextMeasurer = rememberTextMeasurer()
 ) {
+    val isLineRtl = remember(line.syllables) { line.syllables.any { it.content.isRtl() } }
+    val isRtl = isLineRtl
 
-    // 1. RTL 检测
-    val isRtl = remember(line.syllables) {
-        line.syllables.any { it.content.isRtl() }
-    }
-
-    val textMeasurer = rememberTextMeasurer()
-
-    // 2. 核心对齐逻辑计算
-    // Unspecified 默认视为 Start (跟随语言自然方向)
     val isRightAligned = remember(line.alignment, isRtl) {
         when (line.alignment) {
-            // Start 或 Unspecified:
-            // 如果是 RTL，Start 意味着在右边 -> True
-            // 如果是 LTR，Start 意味着在左边 -> False
             KaraokeAlignment.Start, KaraokeAlignment.Unspecified -> isRtl
-
-            // End:
-            // 如果是 RTL，End 意味着在左边 -> False
-            // 如果是 LTR，End 意味着在右边 -> True
             KaraokeAlignment.End -> !isRtl
         }
     }
 
-    // 3. 动画锚点：如果是右对齐，缩放中心点在右侧 (1f)，否则在左侧 (0f)
-    val scaleTransformOrigin = remember(isRightAligned) {
-        TransformOrigin(
-            pivotFractionX = if (isRightAligned) 1f else 0f,
-            pivotFractionY = 1f
-        )
-    }
-
-    // 4. 翻译文本对齐
     val translationTextAlign = remember(isRightAligned) {
         if (isRightAligned) TextAlign.End else TextAlign.Start
     }
 
-    // Column 内部对齐 (用于非 Canvas 元素，如翻译文本)
     val columnHorizontalAlignment = remember(isRightAligned) {
         if (isRightAligned) Alignment.End else Alignment.Start
     }
 
-    val animatedScaleState = animateFloatAsState(
-        targetValue = if (isFocused) 1f else 0.98f, animationSpec = if (isFocused) {
-            androidx.compose.animation.core.tween(
-                durationMillis = 600, easing = LinearOutSlowInEasing
-            )
-        } else {
-            androidx.compose.animation.core.tween(
-                durationMillis = 300, easing = EaseInOut
-            )
-        }, label = "scale"
-    )
-    val animatedAlphaState = animateFloatAsState(
-        targetValue = if (!line.isAccompaniment) if (isFocused) 1f else 0.4f else if (isFocused) 0.6f else 0.2f,
-        label = "alpha"
-    )
-
-    Box(
-        modifier
+    Column(
+        modifier = modifier
             .fillMaxWidth()
-            .clip(ContinuousRoundedRectangle(8.dp))
-            .combinedClickable(
-                onClick = { onLineClicked(line) },
-                onLongClick = { onLinePressed(line) }
-            )
+            .padding(vertical = 8.dp, horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalAlignment = columnHorizontalAlignment
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth() // 关键：始终占满宽度，不使用 align 移动 Column
-                .padding(vertical = 8.dp, horizontal = 16.dp)
-                .graphicsLayer {
-                    scaleX = animatedScaleState.value
-                    scaleY = animatedScaleState.value
-                    transformOrigin = scaleTransformOrigin
-                },
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-            horizontalAlignment = columnHorizontalAlignment // 控制翻译文本的位置
-        ) {
-            BoxWithConstraints(Modifier.graphicsLayer {
-                alpha = animatedAlphaState.value
-            }) {
-                val density = LocalDensity.current
-                val availableWidthPx = with(density) { maxWidth.toPx() }
+        BoxWithConstraints {
+            val density = LocalDensity.current
+            val availableWidthPx = with(density) { maxWidth.toPx() }
 
-                val textStyle = remember(line.isAccompaniment) {
-                    val baseStyle = if (line.isAccompaniment) accompanimentLineTextStyle else normalLineTextStyle
-                    baseStyle.copy(textDirection = TextDirection.Content)
+            val textStyle = remember(line.isAccompaniment) {
+                val baseStyle = if (line.isAccompaniment) accompanimentLineTextStyle else normalLineTextStyle
+                baseStyle.copy(textDirection = TextDirection.Content)
+            }
+
+            val spaceWidth = remember(textMeasurer, textStyle) {
+                textMeasurer.measure(" ", textStyle).size.width.toFloat()
+            }
+
+            val processedSyllables = remember(line.syllables, line.alignment) {
+                if (line.alignment == KaraokeAlignment.End) {
+                    line.syllables.dropLastWhile { it.content.isBlank() }
+                } else {
+                    line.syllables
                 }
+            }
 
-                val spaceWidth = remember(textMeasurer, textStyle) {
-                    textMeasurer.measure(" ", textStyle).size.width.toFloat()
-                }
-
-                val processedSyllables = remember(line.syllables, line.alignment) {
-                    // 仅在 End 且非 RTL 时移除尾部空格，或者根据需要调整逻辑
-                    // 简单起见，这里可以保持原逻辑，或者去掉 trim 逻辑以保证数据一致性
-                    if (line.alignment == KaraokeAlignment.End) {
-                        line.syllables.dropLastWhile { it.content.isBlank() }
-                    } else {
-                        line.syllables
-                    }
-                }
-
-                val initialLayouts by remember(precalculatedLayouts) {
-                    derivedStateOf {
-                        precalculatedLayouts ?: measureSyllablesAndDetermineAnimation(
-                            syllables = processedSyllables,
-                            textMeasurer = textMeasurer,
-                            style = textStyle,
-                            isAccompanimentLine = line.isAccompaniment,
-                            spaceWidth = spaceWidth
-                        )
-                    }
-                }
-
-                val wrappedLines by remember {
-                    derivedStateOf {
-                        calculateBalancedLines(
-                            syllableLayouts = initialLayouts,
-                            availableWidthPx = availableWidthPx,
-                            textMeasurer = textMeasurer,
-                            style = textStyle
-                        )
-                    }
-                }
-
-                val lineHeight = remember(textStyle) {
-                    textMeasurer.measure("M", textStyle).size.height.toFloat()
-                }
-
-                val finalLineLayouts = remember(wrappedLines, availableWidthPx, lineHeight, isRtl, isRightAligned) {
-                    calculateStaticLineLayout(
-                        wrappedLines = wrappedLines,
-                        isLineRightAligned = isRightAligned,
-                        canvasWidth = availableWidthPx,
-                        lineHeight = lineHeight,
-                        isRtl = isRtl
-                    )
-                }
-
-                val totalHeight = remember(wrappedLines, lineHeight) {
-                    lineHeight * wrappedLines.size
-                }
-
-                Canvas(modifier = Modifier.size(maxWidth, (totalHeight.roundToInt() + 8).toDp())) {
-                    val time = currentTimeProvider()
-                    drawLyricsLine(
-                        lineLayouts = finalLineLayouts,
-                        currentTimeMs = time,
-                        color = activeColor,
-                        blendMode = blendMode,
-                        isRtl = isRtl,
-                        showDebugRectangles = showDebugRectangles
+            val initialLayouts by remember(precalculatedLayouts) {
+                derivedStateOf {
+                    precalculatedLayouts ?: measureSyllablesAndDetermineAnimation(
+                        syllables = processedSyllables,
+                        textMeasurer = textMeasurer,
+                        style = textStyle,
+                        isAccompanimentLine = line.isAccompaniment,
+                        spaceWidth = spaceWidth
                     )
                 }
             }
 
-            line.translation?.let { translation ->
-                Text(
-                    text = translation,
-                    color = activeColor.copy(0.4f),
-                    modifier = Modifier.graphicsLayer {
-                        this.blendMode = blendMode
-                    },
-                    textAlign = translationTextAlign // 翻译文本使用 Text 的对齐属性
+            val wrappedLines by remember {
+                derivedStateOf {
+                    calculateBalancedLines(
+                        syllableLayouts = initialLayouts,
+                        availableWidthPx = availableWidthPx,
+                        textMeasurer = textMeasurer,
+                        style = textStyle
+                    )
+                }
+            }
+
+            val lineHeight = remember(textStyle) {
+                textMeasurer.measure("M", textStyle).size.height.toFloat()
+            }
+
+            val finalLineLayouts = remember(wrappedLines, availableWidthPx, lineHeight, isRtl, isRightAligned) {
+                calculateStaticLineLayout(
+                    wrappedLines = wrappedLines,
+                    isLineRightAligned = isRightAligned,
+                    canvasWidth = availableWidthPx,
+                    lineHeight = lineHeight,
+                    isRtl = isRtl
+                )
+            }
+
+            val totalHeight = remember(wrappedLines, lineHeight) {
+                lineHeight * wrappedLines.size
+            }
+
+            Canvas(modifier = Modifier.size(maxWidth, (totalHeight.roundToInt() + 8).toDp())) {
+                val time = currentTimeProvider()
+                drawLyricsLine(
+                    lineLayouts = finalLineLayouts,
+                    currentTimeMs = time,
+                    color = activeColor,
+                    blendMode = blendMode,
+                    isRtl = isRtl,
+                    showDebugRectangles = showDebugRectangles
                 )
             }
         }
+
+        line.translation?.let { translation ->
+            Text(
+                text = translation,
+                color = activeColor.copy(0.4f),
+                modifier = Modifier.graphicsLayer {
+                    this.blendMode = blendMode
+                },
+                textAlign = translationTextAlign
+            )
+        }
     }
 }
-
-
 
 @Composable
 private fun Int.toDp(): Dp = with(LocalDensity.current) { this@toDp.toDp() }
