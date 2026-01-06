@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -35,15 +34,10 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -214,7 +208,7 @@ fun KaraokeLyricsView(
         firstFocusedLineIndex,
         layoutCache,
         stableOffsetPx,
-        listState.layoutInfo.viewportStartOffset
+        listState.isScrollInProgress
     ) {
         if (!scrollInCode.value) {
             val items = listState.layoutInfo.visibleItemsInfo
@@ -226,7 +220,7 @@ fun KaraokeLyricsView(
                 if (scrollOffset != null) {
                     listState.animateScrollBy(scrollOffset, tween(400, 0, EaseOut))
                 } else {
-                    listState.animateScrollToItem(firstFocusedLineIndex, stableOffsetPx)
+                    listState.animateScrollToItem(firstFocusedLineIndex, -stableOffsetPx)
                 }
             } catch (_: Exception) {
             } finally {
@@ -287,23 +281,24 @@ fun KaraokeLyricsView(
                         }
                     }
 
-                    val distanceWeightState = remember(useBlurEffect, allFocusedLineIndex, nextPendingLineIndex) {
-                        derivedStateOf {
-                            if (!useBlurEffect) return@derivedStateOf 0
+                    val distanceWeightState =
+                        remember(useBlurEffect, allFocusedLineIndex, nextPendingLineIndex) {
+                            derivedStateOf {
+                                if (!useBlurEffect) return@derivedStateOf 0
 
-                            val (baseStart, baseEnd) = if (allFocusedLineIndex.isNotEmpty()) {
-                                allFocusedLineIndex.first() to allFocusedLineIndex.last()
-                            } else {
-                                nextPendingLineIndex to nextPendingLineIndex
+                                val (baseStart, baseEnd) = if (allFocusedLineIndex.isNotEmpty()) {
+                                    allFocusedLineIndex.first() to allFocusedLineIndex.last()
+                                } else {
+                                    nextPendingLineIndex to nextPendingLineIndex
+                                }
+
+                                when {
+                                    index < baseStart -> baseStart - index
+                                    index > baseEnd -> index - baseEnd
+                                    else -> 0
+                                }.coerceAtMost(10)
                             }
-
-                            when {
-                                index < baseStart -> baseStart - index
-                                index > baseEnd -> index - baseEnd
-                                else -> 0
-                            }.coerceAtMost(10)
                         }
-                    }
 
                     val blurRadiusState = animateFloatAsState(
                         targetValue = if (distanceWeightState.value > 0 && (!listState.isScrollInProgress || scrollInCode.value)) {
