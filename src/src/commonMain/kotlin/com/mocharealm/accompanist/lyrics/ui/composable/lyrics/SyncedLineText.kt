@@ -35,10 +35,8 @@ fun SyncedLineItem(
     textColor: Color,
     blendMode: BlendMode
 ) {
-    // 使用 remember 缓存计算结果，避免重组时重新计算
     val isLineRtl = remember(line.content) { line.content.isRtl() }
 
-    // 动画数值
     val scaleState = animateFloatAsState(
         targetValue = if (isFocused) 1f else 0.98f,
         animationSpec = tween(if (isFocused) 600 else 300),

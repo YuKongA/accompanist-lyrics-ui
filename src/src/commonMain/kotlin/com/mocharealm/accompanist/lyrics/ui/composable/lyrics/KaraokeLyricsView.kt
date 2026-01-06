@@ -3,7 +3,8 @@ package com.mocharealm.accompanist.lyrics.ui.composable.lyrics
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.core.EaseIn
+import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -31,14 +32,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -169,25 +174,6 @@ fun KaraokeLyricsView(
         }
     }
 
-    val isDuoView by remember {
-        derivedStateOf {
-            var hasStart = false
-            var hasEnd = false
-            if (lyrics.lines.isEmpty()) return@derivedStateOf false
-            for (line in lyrics.lines) {
-                if (line is KaraokeLine) {
-                    when (line.alignment) {
-                        KaraokeAlignment.Start -> hasStart = true
-                        KaraokeAlignment.End -> hasEnd = true
-                        else -> {}
-                    }
-                }
-                if (hasStart && hasEnd) break
-            }
-            hasStart && hasEnd
-        }
-    }
-
     val firstLine = lyrics.lines.firstOrNull()
 
     val haveDotsIntro by remember(firstLine) {
@@ -222,21 +208,29 @@ fun KaraokeLyricsView(
         map
     }
 
+    val scrollInCode = remember { mutableStateOf(false) }
+
     LaunchedEffect(
-        firstFocusedLineIndex
+        firstFocusedLineIndex,
+        layoutCache,
+        stableOffsetPx,
+        listState.layoutInfo.viewportStartOffset
     ) {
-        if (!listState.isScrollInProgress) {
+        if (!scrollInCode.value) {
             val items = listState.layoutInfo.visibleItemsInfo
             val targetItem = items.firstOrNull { it.index == firstFocusedLineIndex }
             val scrollOffset =
                 (targetItem?.offset?.minus(listState.layoutInfo.viewportStartOffset + stableOffsetPx))?.toFloat()
             try {
+                scrollInCode.value = true
                 if (scrollOffset != null) {
-                    listState.animateScrollBy(scrollOffset, tween(600, 0, EaseIn))
+                    listState.animateScrollBy(scrollOffset, tween(400, 0, EaseOut))
                 } else {
                     listState.animateScrollToItem(firstFocusedLineIndex, stableOffsetPx)
                 }
             } catch (_: Exception) {
+            } finally {
+                scrollInCode.value = false
             }
         }
     }
@@ -295,11 +289,52 @@ fun KaraokeLyricsView(
                                     KaraokeAlignment.End -> !isLineRtl
                                 }
                             }
-                            val layoutModifier = Modifier.fillMaxWidth()
-                                .wrapContentWidth(if (isVisualRightAligned) Alignment.End else Alignment.Start)
-                                .fillMaxWidth(if (isDuoView) 0.85f else 1f)
-//                                .graphicsLayer {
-//                                }
+                            val nextPendingLineIndex by remember(lyrics, currentTimeMs()) {
+                                derivedStateOf {
+                                    val time = currentTimeMs()
+                                    val index = lyrics.lines.indexOfFirst { it.start > time }
+                                    if (index == -1) lyrics.lines.size - 1 else index
+                                }
+                            }
+
+                            val distanceWeightState = remember(useBlurEffect, allFocusedLineIndex, nextPendingLineIndex) {
+                                derivedStateOf {
+                                    if (!useBlurEffect) return@derivedStateOf 0
+
+                                    val (baseStart, baseEnd) = if (allFocusedLineIndex.isNotEmpty()) {
+                                        allFocusedLineIndex.first() to allFocusedLineIndex.last()
+                                    } else {
+                                        nextPendingLineIndex to nextPendingLineIndex
+                                    }
+
+                                    when {
+                                        index < baseStart -> baseStart - index
+                                        index > baseEnd -> index - baseEnd
+                                        else -> 0
+                                    }.coerceAtMost(10)
+                                }
+                            }
+
+                            val blurRadiusState = animateFloatAsState(
+                                targetValue = if (distanceWeightState.value > 0 && (!listState.isScrollInProgress || scrollInCode.value)) {
+                                    distanceWeightState.value * 4f
+                                } else {
+                                    0f
+                                },
+                                animationSpec = tween(300),
+                            )
+
+                            val layoutModifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer {
+                                    if (useBlurEffect) {
+                                        renderEffect = BlurEffect(
+                                            radiusX =  blurRadiusState.value,
+                                            radiusY =  blurRadiusState.value,
+                                            edgeTreatment = TileMode.Clamp
+                                        )
+                                    }
+                                }
 
                             if (!line.isAccompaniment) {
                                 KaraokeLineText(
