@@ -1,13 +1,8 @@
 package com.mocharealm.accompanist.lyrics.ui.composable.lyrics
 
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.EaseInOut
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,13 +11,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -30,7 +23,6 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -46,7 +38,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.ui.utils.LayerPaint
@@ -55,7 +46,6 @@ import com.mocharealm.accompanist.lyrics.ui.utils.easing.DipAndRise
 import com.mocharealm.accompanist.lyrics.ui.utils.easing.Swell
 import com.mocharealm.accompanist.lyrics.ui.utils.isPunctuation
 import com.mocharealm.accompanist.lyrics.ui.utils.isRtl
-import com.mocharealm.gaze.capsule.ContinuousRoundedRectangle
 import kotlin.math.roundToInt
 
 private fun createLineGradientBrush(
@@ -316,15 +306,15 @@ fun KaraokeLineText(
     blendMode: BlendMode = BlendMode.SrcOver,
     showDebugRectangles: Boolean = false,
     precalculatedLayouts: List<SyllableLayout>? = null,
+    isDuoView: Boolean = false,
     textMeasurer: TextMeasurer = rememberTextMeasurer()
 ) {
     val isLineRtl = remember(line.syllables) { line.syllables.any { it.content.isRtl() } }
-    val isRtl = isLineRtl
 
-    val isRightAligned = remember(line.alignment, isRtl) {
+    val isRightAligned = remember(line.alignment, isLineRtl) {
         when (line.alignment) {
-            KaraokeAlignment.Start, KaraokeAlignment.Unspecified -> isRtl
-            KaraokeAlignment.End -> !isRtl
+            KaraokeAlignment.Start, KaraokeAlignment.Unspecified -> isLineRtl
+            KaraokeAlignment.End -> !isLineRtl
         }
     }
 
@@ -391,13 +381,14 @@ fun KaraokeLineText(
                 textMeasurer.measure("M", textStyle).size.height.toFloat()
             }
 
-            val finalLineLayouts = remember(wrappedLines, availableWidthPx, lineHeight, isRtl, isRightAligned) {
+            val finalLineLayouts = remember(wrappedLines, availableWidthPx, lineHeight,
+                isLineRtl, isRightAligned) {
                 calculateStaticLineLayout(
                     wrappedLines = wrappedLines,
                     isLineRightAligned = isRightAligned,
                     canvasWidth = availableWidthPx,
                     lineHeight = lineHeight,
-                    isRtl = isRtl
+                    isRtl = isLineRtl
                 )
             }
 
@@ -412,7 +403,7 @@ fun KaraokeLineText(
                     currentTimeMs = time,
                     color = activeColor,
                     blendMode = blendMode,
-                    isRtl = isRtl,
+                    isRtl = isLineRtl,
                     showDebugRectangles = showDebugRectangles
                 )
             }

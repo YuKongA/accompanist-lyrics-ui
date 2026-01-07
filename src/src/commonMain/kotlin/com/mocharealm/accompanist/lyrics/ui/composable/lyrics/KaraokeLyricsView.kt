@@ -3,6 +3,7 @@ package com.mocharealm.accompanist.lyrics.ui.composable.lyrics
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -33,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
@@ -57,6 +59,7 @@ import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.utils.isRtl
 import com.mocharealm.accompanist.lyrics.ui.utils.modifier.dynamicFadingEdge
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
@@ -168,6 +171,25 @@ fun KaraokeLyricsView(
         }
     }
 
+    val isDuoView by remember {
+        derivedStateOf {
+            var hasStart = false
+            var hasEnd = false
+            if (lyrics.lines.isEmpty()) return@derivedStateOf false
+            for (line in lyrics.lines) {
+                if (line is KaraokeLine) {
+                    when (line.alignment) {
+                        KaraokeAlignment.Start -> hasStart = true
+                        KaraokeAlignment.End -> hasEnd = true
+                        else -> {}
+                    }
+                }
+                if (hasStart && hasEnd) break
+            }
+            hasStart && hasEnd
+        }
+    }
+
     val firstLine = lyrics.lines.firstOrNull()
 
     val haveDotsIntro by remember(firstLine) {
@@ -208,7 +230,6 @@ fun KaraokeLyricsView(
         firstFocusedLineIndex,
         layoutCache,
         stableOffsetPx,
-        listState.isScrollInProgress
     ) {
         if (!scrollInCode.value) {
             val items = listState.layoutInfo.visibleItemsInfo
