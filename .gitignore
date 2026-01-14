@@ -13,8 +13,3 @@
 /captures
 .externalNativeBuild
 .cxx
-local.properties
-signing.properties
-release.jks
-gradle.properties
-src/key.gpg

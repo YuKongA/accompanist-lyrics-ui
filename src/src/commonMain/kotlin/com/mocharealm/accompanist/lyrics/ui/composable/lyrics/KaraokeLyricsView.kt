@@ -63,6 +63,32 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
+/**
+ * A comprehensive lyrics view that supports Karaoke and Synced lyrics with advanced rendering.
+ *
+ * This composable handles:
+ * - Scrolling and auto-scrolling to the current line
+ * - Rendering karaoke lines with syllable-level timing and animations
+ * - Rendering synced lines
+ * - Displaying breathing dots during instrumental interludes
+ * - Determining active and accompaniment lines
+ * - Orchestrating layout pre-calculation using [NativeTextEngine]
+ *
+ * @param listState The scroll state for the lazy list.
+ * @param lyrics The lyrics data to display.
+ * @param currentPosition A lambda returning the current playback position in milliseconds.
+ * @param onLineClicked Callback when a line is clicked (seek to position).
+ * @param onLinePressed Callback when a line is long-pressed (share/menu).
+ * @param modifier The modifier to apply to the layout.
+ * @param normalLineTextStyle The style for normal text lines.
+ * @param accompanimentLineTextStyle The style for accompaniment/background vocals lines.
+ * @param textColor The primary text color.
+ * @param breathingDotsDefaults Styling defaults for the breathing dots.
+ * @param blendMode The blend mode used for rendering text (e.g., [BlendMode.Plus] for glowing effects).
+ * @param useBlurEffect Whether to apply blur effect to non-active lines.
+ * @param offset The vertical padding/offset at the start and end of the list.
+ * @param showDebugRectangles Debug flag to draw bounding boxes around glyphs.
+ */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun KaraokeLyricsView(

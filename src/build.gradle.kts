@@ -8,14 +8,31 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.maven.publish)
+    alias(libs.plugins.dokka)
 }
 
 kotlin {
+    targets.all {
+        compilations.all {
+            compileTaskProvider.configure {
+                compilerOptions {
+                    freeCompilerArgs.add("-Xexpect-actual-classes")
+                }
+            }
+        }
+    }
     androidLibrary {
         namespace = "com.mocharealm.accompanist.lyrics.ui"
         compileSdk = 36
 
         minSdk = 29
+
+        optimization {
+            consumerKeepRules.apply {
+                publish = true
+                file("consumer-rules.pro")
+            }
+        }
 
         withJava()
         withHostTestBuilder {}.configure {}
@@ -47,6 +64,17 @@ kotlin {
                 implementation(compose.components.resources)
             }
         }
+        androidMain.dependencies {
+        }
+    }
+}
+
+publishing {
+    repositories {
+        maven {
+            name = "local"
+            url = uri("file:///E:/maven")
+        }
     }
 }
 
@@ -55,7 +83,7 @@ mavenPublishing {
 
     configure(
         KotlinMultiplatform(
-            javadocJar = JavadocJar.Empty(),
+            javadocJar = JavadocJar.Dokka("dokkaGeneratePublicationHtml"),
             sourcesJar = true
         )
     )
@@ -92,5 +120,8 @@ mavenPublishing {
 }
 
 composeCompiler {
-    stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose-compiler-config.conf"))
+    val configFile = rootProject.layout.projectDirectory.file("compose-compiler-config.conf")
+    if (configFile.asFile.exists()) {
+        stabilityConfigurationFiles.add(configFile)
+    }
 }

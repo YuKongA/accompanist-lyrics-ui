@@ -48,6 +48,14 @@ import com.mocharealm.accompanist.lyrics.ui.utils.isPunctuation
 import com.mocharealm.accompanist.lyrics.ui.utils.isRtl
 import kotlin.math.roundToInt
 
+/**
+ * Creates a horizontal gradient brush that represents the karaoke progress.
+ * The gradient moves from inactive color to active color based on the current time.
+ *
+ * @param lineLayout The layout information for syllables in the line.
+ * @param currentTimeMs The current playback time in milliseconds.
+ * @param isRtl Whether the layout direction is Right-to-Left.
+ */
 private fun createLineGradientBrush(
     lineLayout: List<SyllableLayout>,
     currentTimeMs: Int,
@@ -137,6 +145,17 @@ private fun createLineGradientBrush(
     )
 }
 
+/**
+ * Draws a multi-row lyrics line into the canvas.
+ * Handles row wrapping, padding, and applying the karaoke progress gradient.
+ *
+ * @param lineLayouts The pre-calculated layout of syllables, organized by rows.
+ * @param currentTimeMs The current playback time in milliseconds.
+ * @param color The base text color.
+ * @param blendMode The blend mode to use for drawing.
+ * @param isRtl Whether the layout direction is Right-to-Left.
+ * @param showDebugRectangles Whether to draw debug outlines around glyphs.
+ */
 fun DrawScope.drawLyricsLine(
     lineLayouts: List<List<SyllableLayout>>,
     currentTimeMs: Int,
@@ -186,12 +205,21 @@ fun DrawScope.drawLyricsLine(
     }
 }
 
+/**
+ * Draws text for a single row, handling word and character animations.
+ *
+ * @param rowLayouts The layouts for syllables in this row.
+ * @param drawColor The color to draw the text with.
+ * @param blendMode The blend mode to use.
+ * @param showDebugRectangles Whether to show debug bounds.
+ * @param currentTimeMs Current playback time.
+ */
 private fun DrawScope.drawRowText(
     rowLayouts: List<SyllableLayout>,
     drawColor: Color,
     blendMode: BlendMode,
     showDebugRectangles: Boolean,
-    currentTimeMs: Int
+    currentTimeMs: Int,
 ) {
     rowLayouts.forEachIndexed { index, syllableLayout ->
         val wordAnimInfo = syllableLayout.wordAnimInfo
@@ -233,7 +261,6 @@ private fun DrawScope.drawRowText(
                     offset = Offset(0f, 0f),
                     blurRadius = blurRadius
                 )
-
                 withTransform({ scale(scale = scale, pivot = syllableLayout.wordPivot) }) {
                     drawText(
                         textLayoutResult = singleCharLayoutResult,
@@ -295,6 +322,27 @@ private fun DrawScope.drawRowText(
     }
 }
 
+/**
+ * Renders a single karaoke line, capable of handling multi-row wrapping.
+ *
+ * This composable pre-calculates the text layout using [NativeTextEngine] and then
+ * renders the frames using an efficient Canvas drawing strategy. It handles:
+ * - Text measurement and line breaking
+ * - Syllable and character-level animations (bounce, rise, swell)
+ * - Karaoke fill gradient application
+ *
+ * @param line The karaoke line data.
+ * @param currentTimeProvider Provider for the current playback time.
+ * @param modifier Modifier for the layout.
+ * @param normalLineTextStyle Style for normal lines.
+ * @param accompanimentLineTextStyle Style for accompaniment lines.
+ * @param activeColor Color for the active (sung) portion of text.
+ * @param blendMode Blend mode for drawing.
+ * @param showDebugRectangles Debug flag for layout bounds.
+ * @param precalculatedLayouts Optional pre-calculated layouts (optimization).
+ * @param isDuoView Whether this line is part of a duet view.
+ * @param textMeasurer Text measurer for layout (default provided).
+ */
 @Composable
 fun KaraokeLineText(
     line: KaraokeLine,
