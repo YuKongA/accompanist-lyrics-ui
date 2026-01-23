@@ -12,6 +12,9 @@ import com.mocharealm.accompanist.lyrics.ui.utils.isDevanagari
 import com.mocharealm.accompanist.lyrics.ui.utils.isPunctuation
 import com.mocharealm.accompanist.lyrics.ui.utils.isPureCjk
 import kotlin.math.pow
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Density
 
 @Stable
 data class SyllableLayout(
@@ -27,6 +30,8 @@ data class SyllableLayout(
     val charLayouts: List<TextLayoutResult>? = null,
     val charOriginalBounds: List<Rect>? = null,
     val firstBaseline: Float = 0f,
+    val path: Path, // Main path for the syllable
+    val charPaths: List<Path>? = null // Paths for individual characters if awesome animation is used
 )
 
 @Stable
@@ -65,12 +70,17 @@ fun groupIntoWords(syllables: List<KaraokeSyllable>): List<List<KaraokeSyllable>
     return words
 }
 
+
+
 fun measureSyllablesAndDetermineAnimation(
     syllables: List<KaraokeSyllable>,
     textMeasurer: TextMeasurer,
     style: TextStyle,
     isAccompanimentLine: Boolean,
-    spaceWidth: Float
+    spaceWidth: Float,
+    fontFamilyResolver: FontFamily.Resolver,
+    density: Density,
+    context: Any? = null  // Platform-specific context
 ): List<SyllableLayout> {
     val words = groupIntoWords(syllables)
     val fastCharAnimationThresholdMs = 200f
@@ -95,7 +105,8 @@ fun measureSyllablesAndDetermineAnimation(
             // --- Fix: 修正尾部空格宽度丢失 ---
             var layoutWidth = layoutResult.size.width.toFloat()
             if (syllable.content.endsWith(" ")) {
-                val trimmedWidth = textMeasurer.measure(syllable.content.trimEnd(), style).size.width.toFloat()
+                val trimmedWidth =
+                    textMeasurer.measure(syllable.content.trimEnd(), style).size.width.toFloat()
                 if (layoutWidth <= trimmedWidth) {
                     val spaceCount = syllable.content.length - syllable.content.trimEnd().length
                     layoutWidth = trimmedWidth + (spaceWidth * spaceCount)
@@ -103,17 +114,36 @@ fun measureSyllablesAndDetermineAnimation(
             }
             // -----------------------------
 
+            // Cashing the Path
+            val syllablePath = getGlyphPath(
+                text = syllable.content,
+                style = style,
+                density = density,
+                fontFamilyResolver = fontFamilyResolver,
+                context = context
+            )
+
             // 新增：如果需要高级动画，预先测量每个字符
-            val (charLayouts, charBounds) = if (useAwesomeAnimation) {
+            val (charLayouts, charBounds, charPaths) = if (useAwesomeAnimation) {
                 val layouts = syllable.content.map { char ->
                     textMeasurer.measure(char.toString(), style)
                 }
                 val bounds = syllable.content.indices.map { index ->
                     layoutResult.getBoundingBox(index)
                 }
-                layouts to bounds
+                // Cache paths for individual characters
+                val paths = syllable.content.map { char ->
+                    getGlyphPath(
+                        text = char.toString(),
+                        style = style,
+                        density = density,
+                        fontFamilyResolver = fontFamilyResolver,
+                        context = context
+                    )
+                }
+                Triple(layouts, bounds, paths)
             } else {
-                null to null
+                Triple(null, null, null)
             }
 
             SyllableLayout(
@@ -124,7 +154,9 @@ fun measureSyllablesAndDetermineAnimation(
                 width = layoutWidth, // 使用修正后的宽度
                 charLayouts = charLayouts,      // 存入缓存
                 charOriginalBounds = charBounds,
-                firstBaseline = layoutResult.firstBaseline
+                firstBaseline = layoutResult.firstBaseline,
+                path = syllablePath,
+                charPaths = charPaths
             )
         }
     }
@@ -167,7 +199,8 @@ fun calculateGreedyWrappedLines(
         } else {
             // 放不下，先换行（如果当前行不是空的）
             if (currentLine.isNotEmpty()) {
-                val trimmedDisplayLine = trimDisplayLineTrailingSpaces(currentLine, textMeasurer, style)
+                val trimmedDisplayLine =
+                    trimDisplayLineTrailingSpaces(currentLine, textMeasurer, style)
                 if (trimmedDisplayLine.syllables.isNotEmpty()) {
                     lines.add(trimmedDisplayLine)
                 }
@@ -185,7 +218,8 @@ fun calculateGreedyWrappedLines(
                 // 此时必须破坏单词完整性，退化回按音节换行
                 wordSyllables.forEach { syllable ->
                     if (currentLineWidth + syllable.width > availableWidthPx && currentLine.isNotEmpty()) {
-                        val trimmedLine = trimDisplayLineTrailingSpaces(currentLine, textMeasurer, style)
+                        val trimmedLine =
+                            trimDisplayLineTrailingSpaces(currentLine, textMeasurer, style)
                         if (trimmedLine.syllables.isNotEmpty()) lines.add(trimmedLine)
                         currentLine.clear()
                         currentLineWidth = 0f

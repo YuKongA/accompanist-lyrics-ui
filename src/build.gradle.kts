@@ -47,6 +47,18 @@ kotlin {
                 implementation(compose.components.resources)
             }
         }
+        androidMain.dependencies {
+            implementation(libs.jetbrains.skiko.runtime.android)
+        }
+    }
+}
+
+publishing {
+    repositories {
+        maven {
+            name = "local"
+            url = uri("file:///E:/maven")
+        }
     }
 }
 

@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -97,6 +98,8 @@ fun KaraokeLyricsView(
     showDebugRectangles: Boolean = false
 ) {
     val density = LocalDensity.current
+    val fontFamilyResolver = LocalFontFamilyResolver.current
+    val platformContext = getPlatformContext()
     val stableNormalTextStyle = remember(normalLineTextStyle) { normalLineTextStyle }
     val stableAccompanimentTextStyle =
         remember(accompanimentLineTextStyle) { accompanimentLineTextStyle }
@@ -137,7 +140,10 @@ fun KaraokeLyricsView(
                         textMeasurer = textMeasurer,
                         style = style,
                         isAccompanimentLine = line.isAccompaniment,
-                        spaceWidth = spaceWidth
+                        spaceWidth = spaceWidth,
+                        fontFamilyResolver = fontFamilyResolver,
+                        density = density,
+                        context = platformContext
                     )
 
                     withContext(Dispatchers.Main) {

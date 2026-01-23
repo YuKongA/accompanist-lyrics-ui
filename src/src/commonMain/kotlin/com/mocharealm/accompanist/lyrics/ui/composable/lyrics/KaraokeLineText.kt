@@ -23,6 +23,8 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -30,9 +32,10 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
+
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
@@ -193,6 +196,11 @@ private fun DrawScope.drawRowText(
     showDebugRectangles: Boolean,
     currentTimeMs: Int
 ) {
+    val paint = Paint().apply {
+        color = drawColor
+        style = PaintingStyle.Fill
+    }
+
     rowLayouts.forEachIndexed { index, syllableLayout ->
         val wordAnimInfo = syllableLayout.wordAnimInfo
 
@@ -201,10 +209,12 @@ private fun DrawScope.drawRowText(
             val awesomeDuration = wordAnimInfo.wordDuration * 0.8f
 
             val charLayouts = syllableLayout.charLayouts ?: emptyList()
+            val charPaths = syllableLayout.charPaths ?: emptyList()
             val charBounds = syllableLayout.charOriginalBounds ?: emptyList()
 
             syllableLayout.syllable.content.forEachIndexed { charIndex, _ ->
                 val singleCharLayoutResult = charLayouts.getOrNull(charIndex) ?: return@forEachIndexed
+                val singleCharPath = charPaths.getOrNull(charIndex) ?: return@forEachIndexed
                 val charBox = charBounds.getOrNull(charIndex) ?: return@forEachIndexed
 
                 val absoluteCharIndex = syllableLayout.charOffsetInWord + charIndex
@@ -227,26 +237,22 @@ private fun DrawScope.drawRowText(
                 val xPos = syllableLayout.position.x + charBox.left + centeredOffsetX
                 val yPos = syllableLayout.position.y + charBox.top + floatOffset
 
-                val blurRadius = 10f * Bounce.transform(awesomeProgress)
-                val shadow = Shadow(
-                    color = drawColor.copy(0.4f),
-                    offset = Offset(0f, 0f),
-                    blurRadius = blurRadius
-                )
-
-                withTransform({ scale(scale = scale, pivot = syllableLayout.wordPivot) }) {
-                    drawText(
-                        textLayoutResult = singleCharLayoutResult,
-                        color = drawColor,
-                        topLeft = Offset(xPos, yPos),
-                        shadow = shadow,
-                    )
+                withTransform({
+                    scale(scale = scale, pivot = syllableLayout.wordPivot)
+                    translate(left = xPos, top = yPos)
+                }) {
+                    drawIntoCanvas { canvas ->
+                        canvas.drawPath(singleCharPath, paint)
+                    }
                     if (showDebugRectangles) {
                         drawRect(
-                            color = Color.Red, topLeft = Offset(xPos, yPos), size = Size(
+                            color = Color.Red,
+                            topLeft = Offset.Zero, // Already translated
+                            size = Size(
                                 singleCharLayoutResult.size.width.toFloat(),
                                 singleCharLayoutResult.size.height.toFloat()
-                            ), style = Stroke(1f)
+                            ),
+                            style = Stroke(1f)
                         )
                     }
                 }
@@ -278,18 +284,23 @@ private fun DrawScope.drawRowText(
                 y = syllableLayout.position.y + floatOffset
             )
 
-            drawText(
-                textLayoutResult = syllableLayout.textLayoutResult,
-                color = drawColor,
-                topLeft = finalPosition,
-            )
-            if (showDebugRectangles) {
-                drawRect(
-                    color = Color.Green, topLeft = finalPosition, size = Size(
-                        syllableLayout.textLayoutResult.size.width.toFloat(),
-                        syllableLayout.textLayoutResult.size.height.toFloat()
-                    ), style = Stroke(2f)
-                )
+            withTransform({
+                translate(left = finalPosition.x, top = finalPosition.y)
+            }) {
+                drawIntoCanvas { canvas ->
+                    canvas.drawPath(syllableLayout.path, paint)
+                }
+                if (showDebugRectangles) {
+                    drawRect(
+                        color = Color.Green,
+                        topLeft = Offset.Zero, // Already translated
+                        size = Size(
+                            syllableLayout.textLayoutResult.size.width.toFloat(),
+                            syllableLayout.textLayoutResult.size.height.toFloat()
+                        ),
+                        style = Stroke(2f)
+                    )
+                }
             }
         }
     }
@@ -335,6 +346,8 @@ fun KaraokeLineText(
     ) {
         BoxWithConstraints {
             val density = LocalDensity.current
+            val fontFamilyResolver = LocalFontFamilyResolver.current
+            val platformContext = getPlatformContext()
             val availableWidthPx = with(density) { maxWidth.toPx() }
 
             val textStyle = remember(line.isAccompaniment) {
@@ -361,7 +374,10 @@ fun KaraokeLineText(
                         textMeasurer = textMeasurer,
                         style = textStyle,
                         isAccompanimentLine = line.isAccompaniment,
-                        spaceWidth = spaceWidth
+                        spaceWidth = spaceWidth,
+                        fontFamilyResolver = fontFamilyResolver,
+                        density = density,
+                        context = platformContext
                     )
                 }
             }
