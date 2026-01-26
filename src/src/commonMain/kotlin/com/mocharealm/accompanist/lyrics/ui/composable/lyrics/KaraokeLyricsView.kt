@@ -59,10 +59,15 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.ui.utils.isRtl
 import com.mocharealm.accompanist.lyrics.ui.utils.modifier.dynamicFadingEdge
+import com.mocharealm.accompanist.lyrics.text.NativeTextEngine
+import com.mocharealm.accompanist.lyrics.text.SdfAtlasManager
+import com.mocharealm.accompanist.lyrics.text.parsePendingUploads
+import com.mocharealm.accompanist.lyrics.text.rememberSdfAtlasManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import org.jetbrains.compose.resources.FontResource
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -95,11 +100,13 @@ fun KaraokeLyricsView(
     blendMode: BlendMode = BlendMode.Plus,
     useBlurEffect: Boolean = true,
     offset: Dp = 32.dp,
-    showDebugRectangles: Boolean = false
+    showDebugRectangles: Boolean = false,
+    fontResource: FontResource? = null // CMP font resource for NativeTextEngine
 ) {
     val density = LocalDensity.current
     val fontFamilyResolver = LocalFontFamilyResolver.current
     val platformContext = getPlatformContext()
+    val fontResourceBytes = rememberFontResourceBytes(fontResource)
     val stableNormalTextStyle = remember(normalLineTextStyle) { normalLineTextStyle }
     val stableAccompanimentTextStyle =
         remember(accompanimentLineTextStyle) { accompanimentLineTextStyle }
@@ -108,8 +115,31 @@ fun KaraokeLyricsView(
         remember(stableOffset) { with(density) { stableOffset.toPx().fastRoundToInt() } }
     val stableBlendMode = remember(blendMode) { blendMode }
 
-    val textMeasurer = rememberTextMeasurer()
+     val textMeasurer = rememberTextMeasurer()
     val layoutCache = remember { mutableStateMapOf<Int, List<SyllableLayout>>() }
+    
+    // Instantiate NativeTextEngine for layout pre-calculation
+    val nativeEngine = remember(stableNormalTextStyle.fontFamily, platformContext, fontResourceBytes) { 
+        NativeTextEngine().apply {
+            init(2048, 2048)
+            // Prefer fontResource bytes if provided, otherwise fall back to FontFamily
+            val fontBytes = fontResourceBytes 
+                ?: getFontBytes(stableNormalTextStyle.fontFamily, platformContext)
+            if (fontBytes != null) {
+                loadFont(fontBytes)
+            }
+        }
+    }
+    
+    // Shared SdfAtlasManager for all KaraokeLineText components
+    val sharedAtlasManager = rememberSdfAtlasManager(2048, 2048)
+    
+    // Process pending glyph uploads from native engine
+    if (nativeEngine.hasPendingUploads()) {
+        val uploadsJson = nativeEngine.getPendingUploads()
+        val uploads = parsePendingUploads(uploadsJson)
+        sharedAtlasManager.updateAtlas(uploads)
+    }
 
     LaunchedEffect(lyrics, stableNormalTextStyle, stableAccompanimentTextStyle) {
         layoutCache.clear()
@@ -143,7 +173,8 @@ fun KaraokeLyricsView(
                         spaceWidth = spaceWidth,
                         fontFamilyResolver = fontFamilyResolver,
                         density = density,
-                        context = platformContext
+                        nativeEngine = nativeEngine,
+                        platformContext = platformContext
                     )
 
                     withContext(Dispatchers.Main) {
@@ -364,7 +395,9 @@ fun KaraokeLyricsView(
                                         activeColor = textColor,
                                         blendMode = stableBlendMode,
                                         showDebugRectangles = showDebugRectangles,
-                                        precalculatedLayouts = layoutCache[index]
+                                        precalculatedLayouts = layoutCache[index],
+                                        sharedNativeEngine = nativeEngine,
+                                        sharedAtlasManager = sharedAtlasManager
                                     )
                                 }
                             } else {
@@ -418,7 +451,9 @@ fun KaraokeLyricsView(
                                             accompanimentLineTextStyle = stableAccompanimentTextStyle,
                                             activeColor = textColor,
                                             blendMode = stableBlendMode,
-                                            precalculatedLayouts = layoutCache[index]
+                                            precalculatedLayouts = layoutCache[index],
+                                            sharedNativeEngine = nativeEngine,
+                                            sharedAtlasManager = sharedAtlasManager
                                         )
                                     }
                                 }

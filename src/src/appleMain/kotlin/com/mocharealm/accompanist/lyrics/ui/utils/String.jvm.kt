@@ -1,7 +1,5 @@
 package com.mocharealm.accompanist.lyrics.ui.utils
 
-import kotlin.text.toInt
-
 private val cjkBlock = listOf(
     Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS,
     Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A,
@@ -45,20 +43,4 @@ actual fun Char.isArabic(): Boolean {
 
 actual fun Char.isDevanagari(): Boolean {
     return Character.UnicodeBlock.of(this) in devanagariBlock
-}
-
-actual fun String.isPunctuation(): Boolean {
-    return isNotEmpty() && all { char ->
-        char.isWhitespace() ||
-                char in ".,!?;:\"'()[]{}…—–-、。，！？；：\"\"''（）【】《》～·" ||
-                Character.getType(char) in setOf(
-            Character.CONNECTOR_PUNCTUATION.toInt(),
-            Character.DASH_PUNCTUATION.toInt(),
-            Character.END_PUNCTUATION.toInt(),
-            Character.FINAL_QUOTE_PUNCTUATION.toInt(),
-            Character.INITIAL_QUOTE_PUNCTUATION.toInt(),
-            Character.OTHER_PUNCTUATION.toInt(),
-            Character.START_PUNCTUATION.toInt()
-        )
-    }
 }

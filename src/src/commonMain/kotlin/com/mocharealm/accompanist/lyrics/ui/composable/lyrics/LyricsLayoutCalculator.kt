@@ -3,36 +3,115 @@ package com.mocharealm.accompanist.lyrics.ui.composable.lyrics
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
+import com.mocharealm.accompanist.lyrics.text.NativeTextEngine
 import com.mocharealm.accompanist.lyrics.ui.utils.isArabic
 import com.mocharealm.accompanist.lyrics.ui.utils.isDevanagari
 import com.mocharealm.accompanist.lyrics.ui.utils.isPunctuation
 import com.mocharealm.accompanist.lyrics.ui.utils.isPureCjk
 import kotlin.math.pow
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.Density
 
+@Stable
+data class NativeLayoutResult(
+    val glyph_count: Int,
+    val glyph_ids: List<Int>,
+    val positions: List<Float>,
+    val atlas_rects: List<Float>,
+    val glyph_offsets: List<Float>, // x_offset, y_offset interleaved (bearing from glyph origin to bitmap)
+    val total_width: Float,
+    val total_height: Float,
+    val ascent: Float,
+    val descent: Float
+) {
+    val size: IntSize get() = IntSize(total_width.toInt(), total_height.toInt())
+    val firstBaseline: Float get() = ascent
+}
+
+// Helper to parse JSON (MVP hack: use regex or assume strict format from Rust)
+// Robust way: kotlinx.serialization.
+// For now, I will use a dummy function that needs implementation or manual parsing.
+fun parseRustResult(json: String): NativeLayoutResult {
+    // Parse JSON format: {"glyph_count":N,"glyph_ids":[...],"positions":[...],"atlas_rects":[...],"glyph_offsets":[...],"total_width":F,...}
+    if (json.isEmpty() || json == "{}") {
+        return NativeLayoutResult(0, emptyList(), emptyList(), emptyList(), emptyList(), 0f, 0f, 0f, 0f)
+    }
+    
+    try {
+        // Extract numeric fields using regex
+        val glyphCountMatch = Regex(""""glyph_count"\s*:\s*(\d+)""").find(json)
+        val totalWidthMatch = Regex(""""total_width"\s*:\s*([\d.]+)""").find(json)
+        val totalHeightMatch = Regex(""""total_height"\s*:\s*([\d.]+)""").find(json)
+        val ascentMatch = Regex(""""ascent"\s*:\s*([\d.]+)""").find(json)
+        val descentMatch = Regex(""""descent"\s*:\s*([\d.-]+)""").find(json)
+        
+        val glyphCount = glyphCountMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val totalWidth = totalWidthMatch?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+        val totalHeight = totalHeightMatch?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+        val ascent = ascentMatch?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+        val descent = descentMatch?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+        
+        // Extract arrays
+        val glyphIdsMatch = Regex(""""glyph_ids"\s*:\s*\[([\d,\s]*)\]""").find(json)
+        val positionsMatch = Regex(""""positions"\s*:\s*\[([\d.,\s-]*)\]""").find(json)
+        val atlasRectsMatch = Regex(""""atlas_rects"\s*:\s*\[([\d.,\s-]*)\]""").find(json)
+        val glyphOffsetsMatch = Regex(""""glyph_offsets"\s*:\s*\[([\d.,\s-]*)\]""").find(json)
+        
+        val glyphIds = glyphIdsMatch?.groupValues?.get(1)
+            ?.split(",")
+            ?.mapNotNull { it.trim().toIntOrNull() }
+            ?: emptyList()
+        
+        val positions = positionsMatch?.groupValues?.get(1)
+            ?.split(",")
+            ?.mapNotNull { it.trim().toFloatOrNull() }
+            ?: emptyList()
+        
+        val atlasRects = atlasRectsMatch?.groupValues?.get(1)
+            ?.split(",")
+            ?.mapNotNull { it.trim().toFloatOrNull() }
+            ?: emptyList()
+        
+        val glyphOffsets = glyphOffsetsMatch?.groupValues?.get(1)
+            ?.split(",")
+            ?.mapNotNull { it.trim().toFloatOrNull() }
+            ?: emptyList()
+        
+        return NativeLayoutResult(
+            glyph_count = glyphCount,
+            glyph_ids = glyphIds,
+            positions = positions,
+            atlas_rects = atlasRects,
+            glyph_offsets = glyphOffsets,
+            total_width = totalWidth,
+            total_height = totalHeight,
+            ascent = ascent,
+            descent = descent
+        )
+    } catch (e: Exception) {
+        // Fallback to empty on parse error
+        return NativeLayoutResult(0, emptyList(), emptyList(), emptyList(), emptyList(), 0f, 0f, 0f, 0f)
+    }
+}
 @Stable
 data class SyllableLayout(
     val syllable: KaraokeSyllable,
-    val textLayoutResult: TextLayoutResult,
+    val layoutResult: NativeLayoutResult, // Replaced
     val wordId: Int,
     val useAwesomeAnimation: Boolean,
-    val width: Float = textLayoutResult.size.width.toFloat(),
+    val width: Float = layoutResult.total_width,
     val position: Offset = Offset.Zero,
     val wordPivot: Offset = Offset.Zero,
     val wordAnimInfo: WordAnimationInfo? = null,
     val charOffsetInWord: Int = 0,
-    val charLayouts: List<TextLayoutResult>? = null,
+    val charLayouts: List<NativeLayoutResult>? = null, // Replaced
     val charOriginalBounds: List<Rect>? = null,
-    val firstBaseline: Float = 0f,
-    val path: Path, // Main path for the syllable
-    val charPaths: List<Path>? = null, // Paths for individual characters if awesome animation is used
-    val floatEndingTime: Long = 0L // Calculated time when float animation should end
+    val firstBaseline: Float = layoutResult.firstBaseline,
+    val floatEndingTime: Long = 0L 
 )
 
 @Stable
@@ -73,16 +152,21 @@ fun groupIntoWords(syllables: List<KaraokeSyllable>): List<List<KaraokeSyllable>
 
 
 
+// Note: Changed TextMeasurer to NativeTextEngine usage logic
 fun measureSyllablesAndDetermineAnimation(
     syllables: List<KaraokeSyllable>,
-    textMeasurer: TextMeasurer,
+    textMeasurer: TextMeasurer, // Keeping for compatibility of signature, but ignoring? Or use as fallback?
+    // User requested replacement. I'll rely on global engine or add arg if possible.
+    // I will Assume Global NativeTextEngine or context passed is NativeTextEngine.
     style: TextStyle,
     isAccompanimentLine: Boolean,
     spaceWidth: Float,
     fontFamilyResolver: FontFamily.Resolver,
     density: Density,
-    context: Any? = null  // Platform-specific context
+    nativeEngine: NativeTextEngine,
+    platformContext: Any? = null 
 ): List<SyllableLayout> {
+
     val words = groupIntoWords(syllables)
     val fastCharAnimationThresholdMs = 200f
 
@@ -101,63 +185,59 @@ fun measureSyllablesAndDetermineAnimation(
                     && !isAccompanimentLine
 
         word.map { syllable ->
-            val layoutResult = textMeasurer.measure(syllable.content, style)
+            // NATIVE ENGINE CALL
+            // Font size? style.fontSize. Assuming pixel size is needed.
+            // style.fontSize.value needs density.
+            val densityVal = density.density
+            val fontSizePx = if (style.fontSize.isSp) style.fontSize.value * density.fontScale * density.density else style.fontSize.value
+            val fontWeight = style.fontWeight?.weight?.toFloat() ?: 400f
+            
+            val jsonResult = nativeEngine.processText(syllable.content, fontSizePx, fontWeight)
+            var layoutResult = parseRustResult(jsonResult)
 
             // --- Fix: 修正尾部空格宽度丢失 ---
-            var layoutWidth = layoutResult.size.width.toFloat()
+            var layoutWidth = layoutResult.total_width
             if (syllable.content.endsWith(" ")) {
-                val trimmedWidth =
-                    textMeasurer.measure(syllable.content.trimEnd(), style).size.width.toFloat()
+                 val trimmedJson = nativeEngine.processText(syllable.content.trimEnd(), fontSizePx, fontWeight)
+                 val trimmedLayout = parseRustResult(trimmedJson)
+                 val trimmedWidth = trimmedLayout.total_width
+                 
                 if (layoutWidth <= trimmedWidth) {
                     val spaceCount = syllable.content.length - syllable.content.trimEnd().length
                     layoutWidth = trimmedWidth + (spaceWidth * spaceCount)
+                    // Update layoutResult width
+                    layoutResult = layoutResult.copy(total_width = layoutWidth)
                 }
             }
             // -----------------------------
 
-            // Cashing the Path
-            val syllablePath = getGlyphPath(
-                text = syllable.content,
-                style = style,
-                density = density,
-                fontFamilyResolver = fontFamilyResolver,
-                context = context
-            )
-
             // 新增：如果需要高级动画，预先测量每个字符
-            val (charLayouts, charBounds, charPaths) = if (useAwesomeAnimation) {
+            val (charLayouts, charBounds) = if (useAwesomeAnimation) {
                 val layouts = syllable.content.map { char ->
-                    textMeasurer.measure(char.toString(), style)
+                     val cJson = nativeEngine.processText(char.toString(), fontSizePx, fontWeight)
+                     parseRustResult(cJson)
                 }
-                val bounds = syllable.content.indices.map { index ->
-                    layoutResult.getBoundingBox(index)
+                // Calculate bounds from layouts
+                var xOffset = 0f
+                val bounds = layouts.map { layout ->
+                    val rect = Rect(xOffset, 0f, xOffset + layout.total_width, layout.total_height)
+                    xOffset += layout.total_width
+                    rect
                 }
-                // Cache paths for individual characters
-                val paths = syllable.content.map { char ->
-                    getGlyphPath(
-                        text = char.toString(),
-                        style = style,
-                        density = density,
-                        fontFamilyResolver = fontFamilyResolver,
-                        context = context
-                    )
-                }
-                Triple(layouts, bounds, paths)
+                Pair(layouts, bounds)
             } else {
-                Triple(null, null, null)
+                Pair(null, null)
             }
 
             SyllableLayout(
                 syllable = syllable,
-                textLayoutResult = layoutResult,
+                layoutResult = layoutResult,
                 wordId = wordIndex,
                 useAwesomeAnimation = useAwesomeAnimation,
                 width = layoutWidth, // 使用修正后的宽度
                 charLayouts = charLayouts,      // 存入缓存
                 charOriginalBounds = charBounds,
-                firstBaseline = layoutResult.firstBaseline,
-                path = syllablePath,
-                charPaths = charPaths
+                firstBaseline = layoutResult.firstBaseline
             )
         }
     }
@@ -212,8 +292,9 @@ fun measureSyllablesAndDetermineAnimation(
 fun calculateGreedyWrappedLines(
     syllableLayouts: List<SyllableLayout>,
     availableWidthPx: Float,
-    textMeasurer: TextMeasurer,
-    style: TextStyle
+    nativeEngine: NativeTextEngine,
+    style: TextStyle,
+    density: Density
 ): List<WrappedLine> {
     val lines = mutableListOf<WrappedLine>()
     val currentLine = mutableListOf<SyllableLayout>()
@@ -247,7 +328,7 @@ fun calculateGreedyWrappedLines(
             // 放不下，先换行（如果当前行不是空的）
             if (currentLine.isNotEmpty()) {
                 val trimmedDisplayLine =
-                    trimDisplayLineTrailingSpaces(currentLine, textMeasurer, style)
+                    trimDisplayLineTrailingSpaces(currentLine, nativeEngine, style, density)
                 if (trimmedDisplayLine.syllables.isNotEmpty()) {
                     lines.add(trimmedDisplayLine)
                 }
@@ -266,7 +347,7 @@ fun calculateGreedyWrappedLines(
                 wordSyllables.forEach { syllable ->
                     if (currentLineWidth + syllable.width > availableWidthPx && currentLine.isNotEmpty()) {
                         val trimmedLine =
-                            trimDisplayLineTrailingSpaces(currentLine, textMeasurer, style)
+                            trimDisplayLineTrailingSpaces(currentLine, nativeEngine, style, density)
                         if (trimmedLine.syllables.isNotEmpty()) lines.add(trimmedLine)
                         currentLine.clear()
                         currentLineWidth = 0f
@@ -280,7 +361,7 @@ fun calculateGreedyWrappedLines(
 
     // 处理最后一行
     if (currentLine.isNotEmpty()) {
-        val trimmedDisplayLine = trimDisplayLineTrailingSpaces(currentLine, textMeasurer, style)
+        val trimmedDisplayLine = trimDisplayLineTrailingSpaces(currentLine, nativeEngine, style, density)
         if (trimmedDisplayLine.syllables.isNotEmpty()) {
             lines.add(trimmedDisplayLine)
         }
@@ -291,8 +372,9 @@ fun calculateGreedyWrappedLines(
 fun calculateBalancedLines(
     syllableLayouts: List<SyllableLayout>,
     availableWidthPx: Float,
-    textMeasurer: TextMeasurer,
-    style: TextStyle
+    nativeEngine: NativeTextEngine,
+    style: TextStyle,
+    density: Density
 ): List<WrappedLine> {
     if (syllableLayouts.isEmpty()) return emptyList()
 
@@ -324,7 +406,7 @@ fun calculateBalancedLines(
     }
 
     if (costs[n] == Double.POSITIVE_INFINITY) {
-        return calculateGreedyWrappedLines(syllableLayouts, availableWidthPx, textMeasurer, style)
+        return calculateGreedyWrappedLines(syllableLayouts, availableWidthPx, nativeEngine, style, density)
     }
 
     val lines = mutableListOf<WrappedLine>()
@@ -332,7 +414,7 @@ fun calculateBalancedLines(
     while (currentIndex > 0) {
         val startIndex = breaks[currentIndex]
         val lineSyllables = syllableLayouts.subList(startIndex, currentIndex)
-        val trimmedLine = trimDisplayLineTrailingSpaces(lineSyllables, textMeasurer, style)
+        val trimmedLine = trimDisplayLineTrailingSpaces(lineSyllables, nativeEngine, style, density)
         lines.add(0, trimmedLine)
         currentIndex = startIndex
     }
@@ -410,7 +492,7 @@ fun calculateStaticLineLayout(
             val wordLayouts = layoutsByWord.getValue(positionedLayout.wordId)
             val minX = wordLayouts.minOf { it.position.x }
             val maxX = wordLayouts.maxOf { it.position.x + it.width }
-            val bottomY = wordLayouts.maxOf { it.position.y + it.textLayoutResult.size.height }
+            val bottomY = wordLayouts.maxOf { it.position.y + it.layoutResult.size.height }
 
             positionedLayout.copy(
                 wordPivot = Offset(x = (minX + maxX) / 2f, y = bottomY),
@@ -422,7 +504,7 @@ fun calculateStaticLineLayout(
 }
 
 fun trimDisplayLineTrailingSpaces(
-    displayLineSyllables: List<SyllableLayout>, textMeasurer: TextMeasurer, style: TextStyle
+    displayLineSyllables: List<SyllableLayout>, nativeEngine: NativeTextEngine, style: TextStyle, density: Density
 ): WrappedLine {
     if (displayLineSyllables.isEmpty()) {
         return WrappedLine(emptyList(), 0f)
@@ -446,11 +528,15 @@ fun trimDisplayLineTrailingSpaces(
 
     if (trimmedContent.length < originalContent.length) {
         if (trimmedContent.isNotEmpty()) {
-            val trimmedLayoutResult = textMeasurer.measure(trimmedContent, style)
+            val fontSizePx = if (style.fontSize.isSp) style.fontSize.value * density.fontScale * density.density else style.fontSize.value
+            val fontWeight = style.fontWeight?.weight?.toFloat() ?: 400f
+            val trimmedJson = nativeEngine.processText(trimmedContent, fontSizePx, fontWeight)
+            val trimmedLayoutResult = parseRustResult(trimmedJson)
+            
             val trimmedLayout = lastLayout.copy(
                 syllable = lastLayout.syllable.copy(content = trimmedContent),
-                textLayoutResult = trimmedLayoutResult,
-                width = trimmedLayoutResult.size.width.toFloat()
+                layoutResult = trimmedLayoutResult, // Fixed
+                width = trimmedLayoutResult.total_width
             )
             processedSyllables[processedSyllables.lastIndex] = trimmedLayout
         } else {

@@ -23,8 +23,6 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -43,12 +41,17 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeAlignment
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
+import com.mocharealm.accompanist.lyrics.text.NativeTextEngine
+import com.mocharealm.accompanist.lyrics.text.SdfAtlasManager
+import com.mocharealm.accompanist.lyrics.text.parsePendingUploads
+import com.mocharealm.accompanist.lyrics.text.rememberSdfAtlasManager
 import com.mocharealm.accompanist.lyrics.ui.utils.LayerPaint
 import com.mocharealm.accompanist.lyrics.ui.utils.easing.Bounce
 import com.mocharealm.accompanist.lyrics.ui.utils.easing.DipAndRise
 import com.mocharealm.accompanist.lyrics.ui.utils.easing.Swell
 import com.mocharealm.accompanist.lyrics.ui.utils.isPunctuation
 import com.mocharealm.accompanist.lyrics.ui.utils.isRtl
+import org.jetbrains.compose.resources.FontResource
 import kotlin.math.roundToInt
 
 private fun createLineGradientBrush(
@@ -146,7 +149,8 @@ fun DrawScope.drawLyricsLine(
     color: Color,
     blendMode: BlendMode,
     isRtl: Boolean,
-    showDebugRectangles: Boolean = false
+    showDebugRectangles: Boolean = false,
+    atlasManager: SdfAtlasManager? = null
 ) {
     lineLayouts.forEach { rowLayouts ->
         if (rowLayouts.isEmpty()) return@forEach
@@ -154,14 +158,14 @@ fun DrawScope.drawLyricsLine(
         val lastSyllableEnd = rowLayouts.last().syllable.end
 
         if (currentTimeMs >= lastSyllableEnd) {
-            drawRowText(rowLayouts, color, blendMode, showDebugRectangles, currentTimeMs)
+            drawRowText(rowLayouts, color, blendMode, showDebugRectangles, currentTimeMs, atlasManager)
             return@forEach
         }
 
         val minX = rowLayouts.minOf { it.position.x }
         val maxX = rowLayouts.maxOf { it.position.x + it.width }
         val minY = rowLayouts.minOf { it.position.y }
-        val totalHeight = rowLayouts.maxOf { it.textLayoutResult.size.height }.toFloat()
+        val totalHeight = rowLayouts.maxOf { it.layoutResult.size.height }.toFloat()
 
         val verticalPadding = (totalHeight * 0.1).dp.toPx()
         val horizontalPadding = ((maxX - minX) * 0.2).dp.toPx()
@@ -175,7 +179,7 @@ fun DrawScope.drawLyricsLine(
             )
             canvas.saveLayer(layerBounds, LayerPaint)
 
-            drawRowText(rowLayouts, color, blendMode, showDebugRectangles, currentTimeMs)
+            drawRowText(rowLayouts, color, blendMode, showDebugRectangles, currentTimeMs, atlasManager)
 
             val progressBrush = createLineGradientBrush(rowLayouts, currentTimeMs, isRtl)
             drawRect(
@@ -194,13 +198,9 @@ private fun DrawScope.drawRowText(
     drawColor: Color,
     blendMode: BlendMode,
     showDebugRectangles: Boolean,
-    currentTimeMs: Int
+    currentTimeMs: Int,
+    atlasManager: SdfAtlasManager? = null
 ) {
-    val paint = Paint().apply {
-        color = drawColor
-        style = PaintingStyle.Fill
-    }
-
     rowLayouts.forEachIndexed { index, syllableLayout ->
         val wordAnimInfo = syllableLayout.wordAnimInfo
 
@@ -209,12 +209,10 @@ private fun DrawScope.drawRowText(
             val awesomeDuration = wordAnimInfo.wordDuration * 0.8f
 
             val charLayouts = syllableLayout.charLayouts ?: emptyList()
-            val charPaths = syllableLayout.charPaths ?: emptyList()
             val charBounds = syllableLayout.charOriginalBounds ?: emptyList()
 
             syllableLayout.syllable.content.forEachIndexed { charIndex, _ ->
                 val singleCharLayoutResult = charLayouts.getOrNull(charIndex) ?: return@forEachIndexed
-                val singleCharPath = charPaths.getOrNull(charIndex) ?: return@forEachIndexed
                 val charBox = charBounds.getOrNull(charIndex) ?: return@forEachIndexed
 
                 val absoluteCharIndex = syllableLayout.charOffsetInWord + charIndex
@@ -241,17 +239,18 @@ private fun DrawScope.drawRowText(
                     scale(scale = scale, pivot = syllableLayout.wordPivot)
                     translate(left = xPos, top = yPos)
                 }) {
-                    drawIntoCanvas { canvas ->
-                        canvas.drawPath(singleCharPath, paint)
-                    }
+                    // Draw glyph from atlas
+                    val glyphSize = Size(
+                        singleCharLayoutResult.size.width.toFloat(),
+                        singleCharLayoutResult.size.height.toFloat()
+                    )
+                    drawGlyphsFromLayout(singleCharLayoutResult, Offset.Zero, drawColor, atlasManager)
+                    
                     if (showDebugRectangles) {
                         drawRect(
                             color = Color.Red,
-                            topLeft = Offset.Zero, // Already translated
-                            size = Size(
-                                singleCharLayoutResult.size.width.toFloat(),
-                                singleCharLayoutResult.size.height.toFloat()
-                            ),
+                            topLeft = Offset.Zero,
+                            size = glyphSize,
                             style = Stroke(1f)
                         )
                     }
@@ -287,21 +286,95 @@ private fun DrawScope.drawRowText(
             withTransform({
                 translate(left = finalPosition.x, top = finalPosition.y)
             }) {
-                drawIntoCanvas { canvas ->
-                    canvas.drawPath(syllableLayout.path, paint)
-                }
+                // Draw glyphs from atlas
+                val glyphSize = Size(
+                    syllableLayout.layoutResult.size.width.toFloat(),
+                    syllableLayout.layoutResult.size.height.toFloat()
+                )
+                drawGlyphsFromLayout(syllableLayout.layoutResult, Offset.Zero, drawColor, atlasManager)
+                
                 if (showDebugRectangles) {
                     drawRect(
                         color = Color.Green,
-                        topLeft = Offset.Zero, // Already translated
-                        size = Size(
-                            syllableLayout.textLayoutResult.size.width.toFloat(),
-                            syllableLayout.textLayoutResult.size.height.toFloat()
-                        ),
+                        topLeft = Offset.Zero,
+                        size = glyphSize,
                         style = Stroke(2f)
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * Draws all glyphs from a NativeLayoutResult using the SdfAtlasManager.
+ * Each glyph is drawn at its position using atlas coordinates.
+ * Uses glyph bearings (offsets) for proper baseline alignment.
+ */
+private fun DrawScope.drawGlyphsFromLayout(
+    layout: NativeLayoutResult,
+    baseOffset: Offset,
+    color: Color,
+    atlasManager: SdfAtlasManager?
+) {
+    if (layout.glyph_count == 0) return
+    
+    // positions array is x, y interleaved (relative to baseline, y=0 means on baseline)
+    // atlas_rects array is x, y, w, h interleaved (atlas coordinates)
+    // glyph_offsets array is x, y interleaved (bearing from glyph origin to bitmap top-left)
+    for (i in 0 until layout.glyph_count) {
+        val posIndex = i * 2
+        val rectIndex = i * 4
+        val offsetIndex = i * 2
+        
+        if (posIndex + 1 >= layout.positions.size) break
+        if (rectIndex + 3 >= layout.atlas_rects.size) break
+        
+        // Glyph position relative to baseline (from shaping)
+        val glyphX = layout.positions[posIndex]
+        val glyphY = layout.positions[posIndex + 1]
+        
+        // Glyph bearing offsets (from glyph origin to bitmap top-left)
+        val bearingX = if (offsetIndex + 1 < layout.glyph_offsets.size) layout.glyph_offsets[offsetIndex] else 0f
+        val bearingY = if (offsetIndex + 1 < layout.glyph_offsets.size) layout.glyph_offsets[offsetIndex + 1] else 0f
+        
+        val atlasX = layout.atlas_rects[rectIndex]
+        val atlasY = layout.atlas_rects[rectIndex + 1]
+        val atlasW = layout.atlas_rects[rectIndex + 2]
+        val atlasH = layout.atlas_rects[rectIndex + 3]
+        
+        if (atlasW <= 0f || atlasH <= 0f) continue
+        
+        val atlasRect = Rect(atlasX, atlasY, atlasX + atlasW, atlasY + atlasH)
+        
+        // Calculate final position:
+        // - baseOffset.y is the top of the line
+        // - layout.ascent moves us down to the baseline
+        // - glyphY is vertical offset from baseline (usually 0 for horizontal text)
+        // 
+        // In fontdue, ymin is the offset from baseline to the BOTTOM edge of the bitmap.
+        // Positive ymin means the bottom is above the baseline.
+        // So the TOP of the bitmap is at: baseline - (ymin + height)
+        // But we have SDF padding included in bearingY, so:
+        //   bitmap top = baseline - bearingY - atlasH
+        // In screen coords (y down): subtract moves up
+        val destX = baseOffset.x + glyphX + bearingX
+        val destY = baseOffset.y + layout.ascent + glyphY - bearingY - atlasH
+        
+        val destOffset = Offset(destX, destY)
+        val destSize = Size(atlasW, atlasH)
+        
+        if (atlasManager != null && atlasManager.isReady()) {
+            with(atlasManager) {
+                drawGlyph(atlasRect, destOffset, destSize, color)
+            }
+        } else {
+            // Fallback: draw colored rectangle if atlas is not ready
+            drawRect(
+                color = color,
+                topLeft = destOffset,
+                size = destSize
+            )
         }
     }
 }
@@ -318,7 +391,10 @@ fun KaraokeLineText(
     showDebugRectangles: Boolean = false,
     precalculatedLayouts: List<SyllableLayout>? = null,
     isDuoView: Boolean = false,
-    textMeasurer: TextMeasurer = rememberTextMeasurer()
+    textMeasurer: TextMeasurer = rememberTextMeasurer(),
+    fontResource: FontResource? = null, // CMP font resource for NativeTextEngine
+    sharedNativeEngine: NativeTextEngine? = null, // Shared engine for atlas reuse
+    sharedAtlasManager: SdfAtlasManager? = null // Shared atlas manager
 ) {
     val isLineRtl = remember(line.syllables) { line.syllables.any { it.content.isRtl() } }
 
@@ -348,6 +424,7 @@ fun KaraokeLineText(
             val density = LocalDensity.current
             val fontFamilyResolver = LocalFontFamilyResolver.current
             val platformContext = getPlatformContext()
+            val fontResourceBytes = rememberFontResourceBytes(fontResource)
             val availableWidthPx = with(density) { maxWidth.toPx() }
 
             val textStyle = remember(line.isAccompaniment) {
@@ -367,6 +444,22 @@ fun KaraokeLineText(
                 }
             }
 
+            // Create and init NativeTextEngine (use shared if provided)
+            val nativeEngine = sharedNativeEngine ?: remember(textStyle.fontFamily, platformContext, fontResourceBytes) { 
+                NativeTextEngine().apply {
+                    init(2048, 2048)
+                    // Prefer fontResource bytes if provided, otherwise fall back to FontFamily
+                    val fontBytes = fontResourceBytes 
+                        ?: getFontBytes(textStyle.fontFamily, platformContext)
+                    if (fontBytes != null) {
+                        loadFont(fontBytes)
+                    }
+                }
+            }
+            
+            // Create SdfAtlasManager with same dimensions as native engine (use shared if provided)
+            val atlasManager = sharedAtlasManager ?: rememberSdfAtlasManager(2048, 2048)
+
             val initialLayouts by remember(precalculatedLayouts) {
                 derivedStateOf {
                     precalculatedLayouts ?: measureSyllablesAndDetermineAnimation(
@@ -377,7 +470,8 @@ fun KaraokeLineText(
                         spaceWidth = spaceWidth,
                         fontFamilyResolver = fontFamilyResolver,
                         density = density,
-                        context = platformContext
+                        nativeEngine = nativeEngine,
+                        platformContext = platformContext
                     )
                 }
             }
@@ -387,13 +481,17 @@ fun KaraokeLineText(
                     calculateBalancedLines(
                         syllableLayouts = initialLayouts,
                         availableWidthPx = availableWidthPx,
-                        textMeasurer = textMeasurer,
-                        style = textStyle
+                        nativeEngine = nativeEngine,
+                        style = textStyle,
+                        density = density
                     )
                 }
             }
 
             val lineHeight = remember(textStyle) {
+                // Use native engine for 'M' measurement too?
+                // Or keep TextMeasurer for simple generic metrics? 
+                // Let's keep TextMeasurer for line height for now to avoid JSON parsing overhead for simple height.
                 textMeasurer.measure("M", textStyle).size.height.toFloat()
             }
 
@@ -411,6 +509,13 @@ fun KaraokeLineText(
             val totalHeight = remember(wrappedLines, lineHeight) {
                 lineHeight * wrappedLines.size
             }
+            
+            // Process pending glyph uploads from native engine
+            if (nativeEngine.hasPendingUploads()) {
+                val uploadsJson = nativeEngine.getPendingUploads()
+                val uploads = parsePendingUploads(uploadsJson)
+                atlasManager.updateAtlas(uploads)
+            }
 
             Canvas(modifier = Modifier.size(maxWidth, (totalHeight.roundToInt() + 8).toDp())) {
                 val time = currentTimeProvider()
@@ -420,7 +525,8 @@ fun KaraokeLineText(
                     color = activeColor,
                     blendMode = blendMode,
                     isRtl = isLineRtl,
-                    showDebugRectangles = showDebugRectangles
+                    showDebugRectangles = showDebugRectangles,
+                    atlasManager = atlasManager
                 )
             }
         }

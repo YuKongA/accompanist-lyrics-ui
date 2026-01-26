@@ -1,6 +1,7 @@
 import com.android.build.api.dsl.androidLibrary
 import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.KotlinMultiplatform
+import org.gradle.kotlin.dsl.support.serviceOf
 
 plugins {
     alias(libs.plugins.jetbrains.kotlin.multiplatform)
@@ -9,6 +10,11 @@ plugins {
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.maven.publish)
 }
+
+val rustProjectDir = File(rootDir, "text_engine")
+val libName = "text_engine"
+val jniLibsDir = File(projectDir, "src/androidMain/jniLibs")
+val execOps = project.serviceOf<ExecOperations>()
 
 kotlin {
     androidLibrary {
@@ -31,6 +37,33 @@ kotlin {
     }
     jvm()
 
+    val appleTargets = listOf(
+        iosArm64(),
+        iosSimulatorArm64(),
+        macosArm64()
+    )
+    appleTargets.forEach { target ->
+        target.compilations.getByName("main") {
+            val myInterop by cinterops.creating {
+                defFile(project.file("src/nativeInterop/cinterop/$libName.def"))
+                packageName = "com.mocharealm.accompanist.lyrics.ui.native"
+            }
+        }
+
+        // 告诉链接器去哪里找编译好的 .a 文件
+        target.binaries.all {
+            val rustTarget = when (target.name) {
+                "iosArm64" -> "aarch64-apple-ios"
+                "iosSimulatorArm64" -> "aarch64-apple-ios-sim"
+                "macosArm64" -> "aarch64-apple-darwin"
+                else -> ""
+            }
+            if (rustTarget.isNotEmpty()) {
+                linkerOpts("-L${rustProjectDir.absolutePath}/target/$rustTarget/release", "-l$libName")
+            }
+        }
+    }
+
     sourceSets {
         commonMain {
             dependencies {
@@ -48,7 +81,6 @@ kotlin {
             }
         }
         androidMain.dependencies {
-            implementation(libs.jetbrains.skiko.runtime.android)
         }
     }
 }
@@ -105,4 +137,82 @@ mavenPublishing {
 
 composeCompiler {
     stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose-compiler-config.conf"))
+}
+
+// Android
+val buildRustAndroid = tasks.register("buildRustAndroid") {
+    doLast {
+        val abiMap = mapOf(
+            "arm64-v8a" to "aarch64-linux-android",
+            "x86_64" to "x86_64-linux-android",
+            "armeabi-v7a" to "armv7-linux-androideabi"
+        )
+        abiMap.forEach { (abi, target) ->
+            // 显式调用 project.exec
+            execOps.exec {
+                workingDir = rustProjectDir
+                commandLine("cargo", "ndk", "-t", abi, "build", "--release")
+            }.assertNormalExitValue()
+
+            copy {
+                from("${rustProjectDir.absolutePath}/target/$target/release/lib$libName.so")
+                into("${projectDir}/src/androidMain/jniLibs/$abi")
+            }
+        }
+    }
+}
+
+// Apple 编译任务
+val buildRustApple = tasks.register("buildRustApple") {
+    doLast {
+        val appleTargets = listOf(
+            "aarch64-apple-ios",
+            "aarch64-apple-ios-sim",
+            "aarch64-apple-darwin"
+        )
+        appleTargets.forEach { target ->
+            execOps.exec {
+                workingDir = rustProjectDir
+                commandLine("cargo", "build", "--target", target, "--release")
+            }.assertNormalExitValue()
+        }
+
+        // 确保目录存在
+        val interopDir = File(projectDir, "src/nativeInterop/cinterop")
+        if (!interopDir.exists()) interopDir.mkdirs()
+
+        execOps.exec {
+            workingDir = rustProjectDir
+            commandLine("cbindgen", "--config", "cbindgen.toml", "--crate", libName, "--output", "${interopDir.absolutePath}/$libName.h")
+        }.assertNormalExitValue()
+    }
+}
+
+val buildRustJvm = tasks.register("buildRustJvm") {
+    group = "rust"
+    doLast {
+        // 根据当前机器系统编译
+        execOps.exec {
+            workingDir = rustProjectDir
+            commandLine("cargo", "build", "--release")
+        }
+
+        val osName = System.getProperty("os.name").lowercase()
+        val ext = when {
+            osName.contains("win") -> "dll"
+            osName.contains("mac") -> "dylib"
+            else -> "so"
+        }
+
+        // 将库拷贝到 jvmMain 的资源目录中
+        copy {
+            from("${rustProjectDir.absolutePath}/target/release/lib$libName.$ext")
+            into("${projectDir}/src/jvmMain/resources/natives")
+        }
+    }
+}
+
+// 确保在处理资源前先编译 Rust
+tasks.named("jvmProcessResources") {
+    dependsOn(buildRustJvm)
 }

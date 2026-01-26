@@ -1,0 +1,7 @@
+# cbindgen.toml
+language = "C"
+# 只有被 #[no_mangle] 修饰且是 pub 的函数才会被导出
+include_guard = "TEXT_ENGINE_H"
+autogen_2024 = true # 匹配你的 edition
+# 排除 Android 专用的 JNI 符号
+exclude = ["Java_.*"]

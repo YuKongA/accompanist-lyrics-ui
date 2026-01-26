@@ -1,0 +1,127 @@
+
+use swash::FontRef;
+use swash::scale::{ScaleContext, Source, Render};
+use swash::zeno::Format;
+use sdf_glyph_renderer::{BitmapGlyph, clamp_to_u8};
+
+/// Buffer size around the glyph for SDF spread
+const SDF_BUFFER: usize = 4;
+/// SDF radius (distance field cutoff)
+const SDF_RADIUS: usize = 8;
+/// SDF cutoff for clamping to u8 (0.25 is standard for text rendering)
+const SDF_CUTOFF: f64 = 0.25;
+
+pub struct FontWrapper {
+    pub font_data: Vec<u8>,
+    pub _id: usize,
+    scale_context: ScaleContext,
+}
+
+impl FontWrapper {
+    pub fn from_bytes(bytes: &[u8], id: usize) -> Option<Self> {
+        // Verify font is valid
+        let _ = FontRef::from_index(bytes, 0)?;
+        Some(Self { 
+            font_data: bytes.to_vec(),
+            _id: id,
+            scale_context: ScaleContext::new(),
+        })
+    }
+
+    /// Generate a Signed Distance Field for the given glyph with variable font weight support.
+    /// Returns (rgba_data, width, height, xmin, ymin) where the SDF is stored in the alpha channel.
+    /// RGB channels are set to 255 (white) for shader flexibility.
+    /// xmin, ymin are the bearing offsets from glyph origin to bitmap top-left.
+    /// 
+    /// weight: Font weight (100-900, where 400=normal, 700=bold)
+    pub fn generate_sdf(&mut self, glyph_id: u16, size_px: f32, weight: f32) -> (Vec<u8>, u32, u32, f32, f32) {
+        // Create FontRef directly to avoid borrow conflicts
+        let font = match FontRef::from_index(&self.font_data, 0) {
+            Some(f) => f,
+            None => return (vec![0, 0, 0, 0], 1, 1, 0.0, 0.0),
+        };
+        
+        // Build scaler with variable font weight support
+        let mut scaler = self.scale_context.builder(font)
+            .size(size_px)
+            .hint(true)
+            .variations(&[("wght", weight)])  // Set font weight axis
+            .build();
+        
+        // Render the glyph to an alpha mask
+        let image = Render::new(&[
+            Source::Outline,
+        ])
+        .format(Format::Alpha)
+        .render(&mut scaler, glyph_id);
+        
+        let image = match image {
+            Some(img) => img,
+            None => return (vec![0, 0, 0, 0], 1, 1, 0.0, 0.0),
+        };
+        
+        let width = image.placement.width as usize;
+        let height = image.placement.height as usize;
+        
+        if width == 0 || height == 0 {
+            // Empty glyph (e.g., space character)
+            return (vec![0, 0, 0, 0], 1, 1, 0.0, 0.0);
+        }
+        
+        // Use from_unbuffered which automatically adds padding for SDF spread
+        let glyph_bitmap = match BitmapGlyph::from_unbuffered(
+            &image.data,
+            width,
+            height,
+            SDF_BUFFER,
+        ) {
+            Ok(bmp) => bmp,
+            Err(_) => {
+                // Fallback: return a 1x1 transparent pixel
+                return (vec![0, 0, 0, 0], 1, 1, 0.0, 0.0);
+            }
+        };
+        
+        // Generate the signed distance field
+        let sdf_f64 = glyph_bitmap.render_sdf(SDF_RADIUS);
+        
+        // Convert f64 SDF values to u8
+        let sdf_u8 = match clamp_to_u8(&sdf_f64, SDF_CUTOFF) {
+            Ok(data) => data,
+            Err(_) => {
+                // Fallback: return a 1x1 transparent pixel
+                return (vec![0, 0, 0, 0], 1, 1, 0.0, 0.0);
+            }
+        };
+        
+        // Calculate output dimensions (original + buffer on each side)
+        let output_width = width + (SDF_BUFFER * 2);
+        let output_height = height + (SDF_BUFFER * 2);
+        
+        // Convert single-channel SDF to RGBA format
+        // SDF is stored in alpha channel, RGB is white for shader flexibility
+        let mut rgba_data = Vec::with_capacity(sdf_u8.len() * 4);
+        for &sdf_value in &sdf_u8 {
+            rgba_data.push(255);       // R - white
+            rgba_data.push(255);       // G - white  
+            rgba_data.push(255);       // B - white
+            rgba_data.push(sdf_value); // A - SDF value
+        }
+        
+        // Bearing offsets from swash placement (already in pixels)
+        // Adjust for SDF buffer padding
+        // 
+        // swash's placement.left/top are offsets from glyph origin to bitmap top-left corner.
+        // - left: horizontal offset (positive = right of origin)
+        // - top: vertical offset from baseline to TOP of bitmap (positive = above baseline)
+        //
+        // We return (xmin, ymin) where:
+        // - xmin = left bearing (offset from origin to left edge)
+        // - ymin = bottom bearing (offset from baseline to BOTTOM of bitmap)
+        //       = top - height (convert from top to bottom)
+        let xmin = image.placement.left as f32 - SDF_BUFFER as f32;
+        let ymin = (image.placement.top as i32 - height as i32) as f32 - SDF_BUFFER as f32;
+        
+        (rgba_data, output_width as u32, output_height as u32, xmin, ymin)
+    }
+}
