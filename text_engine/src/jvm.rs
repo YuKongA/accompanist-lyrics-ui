@@ -20,6 +20,9 @@ pub unsafe extern "C" fn Java_com_mocharealm_accompanist_lyrics_text_NativeTextE
     atlas_width: jint,
     atlas_height: jint,
 ) {
+    // Initialize Android logger on first init
+    crate::init_logging();
+    
     let mut engine = ENGINE.lock().unwrap();
     *engine = TextEngine::new(atlas_width as u32, atlas_height as u32);
 }
@@ -46,6 +49,26 @@ pub unsafe extern "C" fn Java_com_mocharealm_accompanist_lyrics_text_NativeTextE
     engine.load_fallback_font(byte_vec);
 }
 
+/// Load a fallback font from a file descriptor (Android only).
+/// This is more memory-efficient than passing the entire font as bytes.
+#[no_mangle]
+pub unsafe extern "C" fn Java_com_mocharealm_accompanist_lyrics_text_NativeTextEngine_loadFallbackFontFd(
+    _env: JNIEnv,
+    _this: JObject,
+    fd: jint,
+) -> jboolean {
+    let mut engine = ENGINE.lock().unwrap();
+    #[cfg(unix)]
+    {
+        if engine.load_fallback_font_from_fd(fd) { 1 } else { 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = fd;
+        0 // Not supported on non-Unix platforms
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn Java_com_mocharealm_accompanist_lyrics_text_NativeTextEngine_clearFallbackFonts(
     _env: JNIEnv,
@@ -54,6 +77,7 @@ pub unsafe extern "C" fn Java_com_mocharealm_accompanist_lyrics_text_NativeTextE
     let mut engine = ENGINE.lock().unwrap();
     engine.clear_fallback_fonts();
 }
+
 
 #[no_mangle]
 pub unsafe extern "C" fn Java_com_mocharealm_accompanist_lyrics_text_NativeTextEngine_processText<'local>(

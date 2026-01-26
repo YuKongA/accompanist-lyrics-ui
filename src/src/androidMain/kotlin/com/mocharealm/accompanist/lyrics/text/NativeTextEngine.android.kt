@@ -15,6 +15,10 @@ actual class NativeTextEngine {
     actual external fun loadFont(bytes: ByteArray)
     actual external fun loadFallbackFont(bytes: ByteArray)
     actual external fun clearFallbackFonts()
+    
+    // File descriptor-based font loading (more memory efficient)
+    external fun loadFallbackFontFd(fd: Int): Boolean
+
     actual external fun processText(text: String, sizeFn: Float, weight: Float): String
     actual external fun hasPendingUploads(): Boolean
     actual external fun getPendingUploads(): String

@@ -127,11 +127,16 @@ fun KaraokeLyricsView(
                 ?: getFontBytes(stableNormalTextStyle.fontFamily, platformContext)
             if (fontBytes != null) {
                 loadFont(fontBytes)
+                println("KaraokeLyricsView: Loaded primary font (${fontBytes.size} bytes)")
+            } else {
+                println("KaraokeLyricsView: No primary font loaded!")
             }
             // Load system fallback fonts for missing glyphs (e.g., CJK characters)
             val fallbackFonts = getSystemFallbackFontBytes(platformContext)
-            for (fallbackBytes in fallbackFonts) {
+            println("KaraokeLyricsView: Found ${fallbackFonts.size} fallback fonts")
+            for ((index, fallbackBytes) in fallbackFonts.withIndex()) {
                 loadFallbackFont(fallbackBytes)
+                println("KaraokeLyricsView: Loaded fallback font #$index (${fallbackBytes.size} bytes)")
             }
         }
     }

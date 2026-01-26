@@ -3,6 +3,8 @@ use swash::FontRef;
 use swash::scale::{ScaleContext, Source, Render};
 use swash::zeno::Format;
 use sdf_glyph_renderer::{BitmapGlyph, clamp_to_u8};
+use memmap2::Mmap;
+use std::ops::Deref;
 
 /// Buffer size around the glyph for SDF spread
 const SDF_BUFFER: usize = 4;
@@ -11,8 +13,25 @@ const SDF_RADIUS: usize = 8;
 /// SDF cutoff for clamping to u8 (0.25 is standard for text rendering)
 const SDF_CUTOFF: f64 = 0.25;
 
+/// Font data storage - supports both owned bytes and memory-mapped files
+pub enum FontData {
+    Owned(Vec<u8>),
+    Mapped(Mmap),
+}
+
+impl Deref for FontData {
+    type Target = [u8];
+    
+    fn deref(&self) -> &[u8] {
+        match self {
+            FontData::Owned(v) => v.as_slice(),
+            FontData::Mapped(m) => m.deref(),
+        }
+    }
+}
+
 pub struct FontWrapper {
-    pub font_data: Vec<u8>,
+    pub font_data: FontData,
     pub _id: usize,
     scale_context: ScaleContext,
 }
@@ -22,7 +41,18 @@ impl FontWrapper {
         // Verify font is valid
         let _ = FontRef::from_index(bytes, 0)?;
         Some(Self { 
-            font_data: bytes.to_vec(),
+            font_data: FontData::Owned(bytes.to_vec()),
+            _id: id,
+            scale_context: ScaleContext::new(),
+        })
+    }
+    
+    /// Create FontWrapper from a memory-mapped file
+    pub fn from_mmap(mmap: Mmap, id: usize) -> Option<Self> {
+        // Verify font is valid
+        let _ = FontRef::from_index(&mmap, 0)?;
+        Some(Self {
+            font_data: FontData::Mapped(mmap),
             _id: id,
             scale_context: ScaleContext::new(),
         })

@@ -99,8 +99,11 @@ private fun getSystemFontBytes(): ByteArray? {
 actual fun getSystemFallbackFontBytes(platformContext: Any?): List<ByteArray> {
     val result = mutableListOf<ByteArray>()
     
+    val osName = System.getProperty("os.name").lowercase()
+    println("getSystemFallbackFontBytes: OS=$osName")
+    
     val fallbackPaths = when {
-        System.getProperty("os.name").lowercase().contains("win") -> listOf(
+        osName.contains("win") -> listOf(
             "C:/Windows/Fonts/msyh.ttc",      // Microsoft YaHei - Chinese
             "C:/Windows/Fonts/simsun.ttc",    // SimSun - Chinese
             "C:/Windows/Fonts/meiryo.ttc",    // Meiryo - Japanese
@@ -108,7 +111,7 @@ actual fun getSystemFallbackFontBytes(platformContext: Any?): List<ByteArray> {
             "C:/Windows/Fonts/arial.ttf",     // Arial - Latin
             "C:/Windows/Fonts/seguisym.ttf"   // Segoe UI Symbol - Emoji/symbols
         )
-        System.getProperty("os.name").lowercase().contains("mac") -> listOf(
+        osName.contains("mac") -> listOf(
             "/System/Library/Fonts/PingFang.ttc",         // Chinese
             "/System/Library/Fonts/Hiragino Sans GB.ttc", // Chinese
             "/System/Library/Fonts/Hiragino.ttc",         // Japanese
@@ -128,14 +131,20 @@ actual fun getSystemFallbackFontBytes(platformContext: Any?): List<ByteArray> {
     
     for (path in fallbackPaths) {
         val file = File(path)
-        if (file.exists() && file.canRead()) {
+        val exists = file.exists()
+        val canRead = file.canRead()
+        println("  Font path: $path, exists=$exists, canRead=$canRead")
+        if (exists && canRead) {
             try {
-                result.add(file.readBytes())
+                val bytes = file.readBytes()
+                result.add(bytes)
+                println("  -> Loaded ${bytes.size} bytes")
             } catch (e: Exception) {
-                // Skip unreadable fonts
+                println("  -> Failed to read: ${e.message}")
             }
         }
     }
     
+    println("getSystemFallbackFontBytes: Loaded ${result.size} fallback fonts")
     return result
 }

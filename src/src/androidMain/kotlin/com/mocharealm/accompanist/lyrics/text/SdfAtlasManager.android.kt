@@ -26,27 +26,22 @@ actual class SdfAtlasManager actual constructor(
     private var isDirty = true
     private var hasAnyData = false
     
-    // Native text engine for font loading
-    private val nativeEngine = NativeTextEngine()
-    
-    init {
-        nativeEngine.init(atlasWidth, atlasHeight)
-    }
-    
     // SDF rendering parameters
-    private val sdfThreshold = 0.5f  // Edge threshold
+    private val sdfThreshold = 0.7f  // Edge threshold
     private val sdfSmoothing = 0.02f  // Anti-aliasing width (smaller = sharper edges)
     
+    // Font loading is handled by the external NativeTextEngine
+    // These methods are kept for API compatibility but delegate to the shared engine
     actual fun loadFont(fontBytes: ByteArray) {
-        nativeEngine.loadFont(fontBytes)
+        // No-op: Font loading should be done via the shared NativeTextEngine
     }
     
     actual fun loadFallbackFont(fontBytes: ByteArray) {
-        nativeEngine.loadFallbackFont(fontBytes)
+        // No-op: Font loading should be done via the shared NativeTextEngine
     }
     
     actual fun clearFallbackFonts() {
-        nativeEngine.clearFallbackFonts()
+        // No-op: Font loading should be done via the shared NativeTextEngine
     }
     
     actual fun updateAtlas(uploads: List<GlyphUpload>) {
@@ -140,6 +135,5 @@ actual class SdfAtlasManager actual constructor(
         atlasBitmap.recycle()
         atlasImageBitmap = null
         hasAnyData = false
-        nativeEngine.destroy()
     }
 }
