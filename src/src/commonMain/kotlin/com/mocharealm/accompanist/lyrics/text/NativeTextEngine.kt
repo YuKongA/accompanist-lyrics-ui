@@ -3,6 +3,8 @@ package com.mocharealm.accompanist.lyrics.text
 expect class NativeTextEngine() {
     fun init(atlasWidth: Int, atlasHeight: Int)
     fun loadFont(bytes: ByteArray)
+    fun loadFallbackFont(bytes: ByteArray)
+    fun clearFallbackFonts()
     fun processText(text: String, sizeFn: Float, weight: Float = 400f): String
     fun hasPendingUploads(): Boolean
     fun getPendingUploads(): String

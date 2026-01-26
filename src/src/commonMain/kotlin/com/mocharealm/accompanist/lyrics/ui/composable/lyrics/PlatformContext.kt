@@ -31,6 +31,14 @@ expect fun getPlatformContext(): Any?
 expect fun getFontBytes(fontFamily: FontFamily?, platformContext: Any?): ByteArray?
 
 /**
+ * Get system fallback font bytes for text that cannot be rendered with the primary font.
+ * Returns a system font that supports a wide range of characters (e.g., CJK).
+ * @param platformContext Platform context (Context on Android, null elsewhere)
+ * @return List of fallback font bytes in priority order
+ */
+expect fun getSystemFallbackFontBytes(platformContext: Any?): List<ByteArray>
+
+/**
  * Read font bytes from a Compose Multiplatform FontResource.
  * Uses the public LocalResourceReader API.
  */

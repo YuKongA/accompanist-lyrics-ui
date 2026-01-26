@@ -84,6 +84,24 @@ expect class SdfAtlasManager(atlasWidth: Int, atlasHeight: Int) {
     fun isReady(): Boolean
     
     /**
+     * Loads the primary font for text rendering.
+     * @param fontBytes The raw bytes of the font file (TTF/OTF)
+     */
+    fun loadFont(fontBytes: ByteArray)
+    
+    /**
+     * Loads a fallback font for missing glyphs.
+     * Fallback fonts are tried in the order they are loaded.
+     * @param fontBytes The raw bytes of the font file (TTF/OTF)
+     */
+    fun loadFallbackFont(fontBytes: ByteArray)
+    
+    /**
+     * Clears all loaded fallback fonts.
+     */
+    fun clearFallbackFonts()
+    
+    /**
      * Releases all resources associated with the atlas.
      */
     fun destroy()

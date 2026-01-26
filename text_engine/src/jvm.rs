@@ -36,6 +36,26 @@ pub unsafe extern "C" fn Java_com_mocharealm_accompanist_lyrics_text_NativeTextE
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn Java_com_mocharealm_accompanist_lyrics_text_NativeTextEngine_loadFallbackFont(
+    env: JNIEnv,
+    _this: JObject,
+    bytes: jbyteArray,
+) {
+    let byte_vec = env.convert_byte_array(bytes).unwrap_or_default();
+    let mut engine = ENGINE.lock().unwrap();
+    engine.load_fallback_font(byte_vec);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn Java_com_mocharealm_accompanist_lyrics_text_NativeTextEngine_clearFallbackFonts(
+    _env: JNIEnv,
+    _this: JObject,
+) {
+    let mut engine = ENGINE.lock().unwrap();
+    engine.clear_fallback_fonts();
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn Java_com_mocharealm_accompanist_lyrics_text_NativeTextEngine_processText<'local>(
     env: JNIEnv<'local>,
     _this: JObject<'local>,

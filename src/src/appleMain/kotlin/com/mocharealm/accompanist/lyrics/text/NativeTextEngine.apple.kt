@@ -9,6 +9,14 @@ actual class NativeTextEngine {
         // TODO: iOS/macOS native implementation via cinterop
     }
     
+    actual fun loadFallbackFont(bytes: ByteArray) {
+        // TODO: iOS/macOS native implementation via cinterop
+    }
+    
+    actual fun clearFallbackFonts() {
+        // TODO: iOS/macOS native implementation via cinterop
+    }
+    
     actual fun processText(text: String, sizeFn: Float, weight: Float): String {
         // TODO: iOS/macOS native implementation via cinterop
         return "{}"

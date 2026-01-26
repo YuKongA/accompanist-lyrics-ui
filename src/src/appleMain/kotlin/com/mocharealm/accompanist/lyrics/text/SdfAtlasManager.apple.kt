@@ -17,7 +17,26 @@ actual class SdfAtlasManager actual constructor(
     actual val width: Int = atlasWidth
     actual val height: Int = atlasHeight
     
+    // Native text engine for font loading (stub for Apple)
+    private val nativeEngine = NativeTextEngine()
+    
+    init {
+        nativeEngine.init(atlasWidth, atlasHeight)
+    }
+    
     // TODO: Implement using Metal/Core Graphics when Apple native text engine is ready
+    
+    actual fun loadFont(fontBytes: ByteArray) {
+        nativeEngine.loadFont(fontBytes)
+    }
+    
+    actual fun loadFallbackFont(fontBytes: ByteArray) {
+        nativeEngine.loadFallbackFont(fontBytes)
+    }
+    
+    actual fun clearFallbackFonts() {
+        nativeEngine.clearFallbackFonts()
+    }
     
     actual fun updateAtlas(uploads: List<GlyphUpload>) {
         // Stub - not implemented for Apple yet
@@ -40,6 +59,6 @@ actual class SdfAtlasManager actual constructor(
     actual fun isReady(): Boolean = false
     
     actual fun destroy() {
-        // No-op
+        nativeEngine.destroy()
     }
 }

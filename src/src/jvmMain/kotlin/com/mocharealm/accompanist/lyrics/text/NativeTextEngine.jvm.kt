@@ -19,6 +19,8 @@ actual class NativeTextEngine {
 
     actual external fun init(atlasWidth: Int, atlasHeight: Int)
     actual external fun loadFont(bytes: ByteArray)
+    actual external fun loadFallbackFont(bytes: ByteArray)
+    actual external fun clearFallbackFonts()
     actual external fun processText(text: String, sizeFn: Float, weight: Float): String
     actual external fun hasPendingUploads(): Boolean
     actual external fun getPendingUploads(): String

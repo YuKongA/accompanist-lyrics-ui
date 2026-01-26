@@ -128,6 +128,11 @@ fun KaraokeLyricsView(
             if (fontBytes != null) {
                 loadFont(fontBytes)
             }
+            // Load system fallback fonts for missing glyphs (e.g., CJK characters)
+            val fallbackFonts = getSystemFallbackFontBytes(platformContext)
+            for (fallbackBytes in fallbackFonts) {
+                loadFallbackFont(fallbackBytes)
+            }
         }
     }
     

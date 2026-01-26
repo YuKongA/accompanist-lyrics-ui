@@ -57,6 +57,41 @@ actual fun getFontBytes(fontFamily: FontFamily?, platformContext: Any?): ByteArr
     return getSystemFontBytes()
 }
 
+/**
+ * Get system fallback fonts for missing glyphs.
+ * Returns fonts in priority order, prioritizing CJK and wide Unicode coverage.
+ */
+actual fun getSystemFallbackFontBytes(platformContext: Any?): List<ByteArray> {
+    val result = mutableListOf<ByteArray>()
+    
+    // Fallback font paths in priority order
+    // NotoSansCJK provides excellent CJK coverage
+    // Other Noto fonts provide additional Unicode coverage
+    val fallbackPaths = listOf(
+        "/system/fonts/NotoSansCJK-Regular.ttc",
+        "/system/fonts/NotoSansSC-Regular.otf",
+        "/system/fonts/NotoSansTC-Regular.otf",
+        "/system/fonts/NotoSansJP-Regular.otf",
+        "/system/fonts/NotoSansKR-Regular.otf",
+        "/system/fonts/NotoSans-Regular.ttf",
+        "/system/fonts/DroidSansFallback.ttf",
+        "/system/fonts/Roboto-Regular.ttf"
+    )
+    
+    for (path in fallbackPaths) {
+        val file = File(path)
+        if (file.exists() && file.canRead()) {
+            try {
+                result.add(file.readBytes())
+            } catch (e: Exception) {
+                // Skip unreadable fonts
+            }
+        }
+    }
+    
+    return result
+}
+
 private fun getSystemFontBytes(): ByteArray? {
     val fontPaths = listOf(
         "/system/fonts/Roboto-Regular.ttf",

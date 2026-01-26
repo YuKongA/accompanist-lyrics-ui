@@ -16,3 +16,13 @@ actual fun getFontBytes(fontFamily: FontFamily?, platformContext: Any?): ByteArr
     // CTFontCopyTable can be used to get font data
     return null
 }
+
+/**
+ * Get system fallback fonts on Apple platforms.
+ * TODO: Implement using CoreText APIs via cinterop.
+ */
+actual fun getSystemFallbackFontBytes(platformContext: Any?): List<ByteArray> {
+    // TODO: Use CoreText to enumerate system fonts
+    // CTFontCreateUIFontForLanguage can be used to get localized system fonts
+    return emptyList()
+}

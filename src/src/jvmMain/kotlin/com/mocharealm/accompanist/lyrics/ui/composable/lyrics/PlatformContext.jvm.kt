@@ -91,3 +91,51 @@ private fun getSystemFontBytes(): ByteArray? {
     
     return null
 }
+
+/**
+ * Get system fallback fonts for missing glyphs on JVM/Desktop.
+ * Returns fonts in priority order, prioritizing CJK and wide Unicode coverage.
+ */
+actual fun getSystemFallbackFontBytes(platformContext: Any?): List<ByteArray> {
+    val result = mutableListOf<ByteArray>()
+    
+    val fallbackPaths = when {
+        System.getProperty("os.name").lowercase().contains("win") -> listOf(
+            "C:/Windows/Fonts/msyh.ttc",      // Microsoft YaHei - Chinese
+            "C:/Windows/Fonts/simsun.ttc",    // SimSun - Chinese
+            "C:/Windows/Fonts/meiryo.ttc",    // Meiryo - Japanese
+            "C:/Windows/Fonts/malgun.ttf",    // Malgun Gothic - Korean
+            "C:/Windows/Fonts/arial.ttf",     // Arial - Latin
+            "C:/Windows/Fonts/seguisym.ttf"   // Segoe UI Symbol - Emoji/symbols
+        )
+        System.getProperty("os.name").lowercase().contains("mac") -> listOf(
+            "/System/Library/Fonts/PingFang.ttc",         // Chinese
+            "/System/Library/Fonts/Hiragino Sans GB.ttc", // Chinese
+            "/System/Library/Fonts/Hiragino.ttc",         // Japanese
+            "/System/Library/Fonts/AppleGothic.ttf",      // Korean
+            "/System/Library/Fonts/Helvetica.ttc",        // Latin
+            "/System/Library/Fonts/Apple Color Emoji.ttc" // Emoji
+        )
+        else -> listOf(
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+        )
+    }
+    
+    for (path in fallbackPaths) {
+        val file = File(path)
+        if (file.exists() && file.canRead()) {
+            try {
+                result.add(file.readBytes())
+            } catch (e: Exception) {
+                // Skip unreadable fonts
+            }
+        }
+    }
+    
+    return result
+}

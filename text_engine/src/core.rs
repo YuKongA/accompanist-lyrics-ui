@@ -13,6 +13,7 @@ pub struct LayoutResult {
     pub positions: Vec<f32>, // x, y interleaved (relative to baseline)
     pub atlas_rects: Vec<f32>, // u, v, w, h in atlas
     pub glyph_offsets: Vec<f32>, // x_offset, y_offset interleaved (bearing from glyph origin to bitmap top-left)
+    pub font_indices: Vec<u8>, // Which font each glyph comes from (0 = primary, 1+ = fallback)
     pub total_width: f32,
     pub total_height: f32,
     pub ascent: f32,
@@ -30,8 +31,12 @@ pub struct PendingUpload {
 
 pub struct TextEngine {
     atlas: AtlasManager,
+    // Primary font
     font: Option<FontWrapper>,
-    font_data: Vec<u8>, // We own the bytes
+    font_data: Vec<u8>,
+    // Fallback fonts (system fonts, etc.)
+    fallback_fonts: Vec<FontWrapper>,
+    fallback_font_data: Vec<Vec<u8>>,
     pending_uploads: Vec<PendingUpload>,
     pub atlas_width: u32,
     pub atlas_height: u32,
@@ -43,6 +48,8 @@ impl TextEngine {
             atlas: AtlasManager::new(atlas_width, atlas_height),
             font: None,
             font_data: Vec::new(),
+            fallback_fonts: Vec::new(),
+            fallback_font_data: Vec::new(),
             pending_uploads: Vec::new(),
             atlas_width,
             atlas_height,
@@ -50,11 +57,26 @@ impl TextEngine {
     }
 
     pub fn load_font(&mut self, font_bytes: Vec<u8>) {
-        // Init FontWrapper (fontdue)
+        // Init FontWrapper for primary font
         if let Some(wrapper) = FontWrapper::from_bytes(&font_bytes, 0) {
             self.font = Some(wrapper);
         }
-         self.font_data = font_bytes;
+        self.font_data = font_bytes;
+    }
+    
+    /// Load a fallback font (e.g., system font for missing glyphs)
+    pub fn load_fallback_font(&mut self, font_bytes: Vec<u8>) {
+        let font_id = self.fallback_fonts.len() + 1; // 0 is primary
+        if let Some(wrapper) = FontWrapper::from_bytes(&font_bytes, font_id) {
+            self.fallback_fonts.push(wrapper);
+            self.fallback_font_data.push(font_bytes);
+        }
+    }
+    
+    /// Clear all fallback fonts
+    pub fn clear_fallback_fonts(&mut self) {
+        self.fallback_fonts.clear();
+        self.fallback_font_data.clear();
     }
     
     pub fn get_pending_uploads(&mut self) -> Vec<PendingUpload> {
@@ -75,28 +97,32 @@ impl TextEngine {
         self.atlas = AtlasManager::new(self.atlas_width, self.atlas_height);
         self.font = None;
         self.font_data = Vec::new();
+        self.fallback_fonts.clear();
+        self.fallback_font_data.clear();
         self.pending_uploads.clear();
     }
 
     pub fn process_text(&mut self, text: &str, size_px: f32, weight: f32) -> LayoutResult {
+        let empty_result = LayoutResult {
+            glyph_count: 0,
+            glyph_ids: vec![],
+            positions: vec![],
+            atlas_rects: vec![],
+            glyph_offsets: vec![],
+            font_indices: vec![],
+            total_width: 0.0,
+            total_height: 0.0,
+            ascent: 0.0,
+            descent: 0.0,
+        };
+        
         if self.font_data.is_empty() {
-             return LayoutResult {
-                 glyph_count: 0,
-                 glyph_ids: vec![],
-                 positions: vec![],
-                 atlas_rects: vec![],
-                 glyph_offsets: vec![],
-                 total_width: 0.0,
-                 total_height: 0.0,
-                 ascent: 0.0,
-                 descent: 0.0,
-             };
+            return empty_result;
         }
 
-        let mut face = Face::from_slice(&self.font_data, 0).unwrap(); // fast
+        let mut face = Face::from_slice(&self.font_data, 0).unwrap();
         
         // Set font weight variation for variable fonts
-        // This ensures shaping uses the correct glyph metrics for the specified weight
         face.set_variations(&[rustybuzz::Variation {
             tag: rustybuzz::ttf_parser::Tag::from_bytes(b"wght"),
             value: weight,
@@ -113,6 +139,7 @@ impl TextEngine {
         let mut pos = Vec::with_capacity(glyph_infos.len() * 2);
         let mut rects = Vec::with_capacity(glyph_infos.len() * 4);
         let mut offsets = Vec::with_capacity(glyph_infos.len() * 2);
+        let mut font_indices = Vec::with_capacity(glyph_infos.len());
 
         let mut x_cursor = 0.0;
         let mut y_cursor = 0.0;
@@ -123,22 +150,69 @@ impl TextEngine {
         
         // Quantize weight to reduce cache fragmentation (round to nearest 100)
         let weight_key = ((weight / 100.0).round() * 100.0) as u32;
+        
+        // Get text chars for fallback lookup
+        let text_chars: Vec<char> = text.chars().collect();
 
         for (info, gp) in glyph_infos.iter().zip(glyph_positions.iter()) {
             let glyph_id = info.glyph_id as u16;
+            let cluster = info.cluster as usize;
+            
+            // Determine which font to use and get the actual glyph_id
+            // If glyph_id is 0 (missing), try fallback fonts
+            let (actual_font_id, actual_glyph_id, font_wrapper_idx) = 
+                if glyph_id == 0 && cluster < text_chars.len() {
+                    // Try to find this character in fallback fonts
+                    let ch = text_chars[cluster];
+                    let mut found = None;
+                    
+                    for (fb_idx, fb_data) in self.fallback_font_data.iter().enumerate() {
+                        if let Some(fb_face) = Face::from_slice(fb_data, 0) {
+                            if let Some(gid) = fb_face.glyph_index(ch) {
+                                if gid.0 != 0 {
+                                    found = Some((fb_idx + 1, gid.0, fb_idx));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if let Some((font_id, fb_glyph_id, fb_idx)) = found {
+                        (font_id, fb_glyph_id, Some(fb_idx))
+                    } else {
+                        // No fallback found, use original (will show missing glyph)
+                        (0usize, glyph_id, None)
+                    }
+                } else {
+                    (0usize, glyph_id, None)
+                };
             
             // Get glyph info (rect + bearing) from cache or generate new
-            // Cache key includes weight for variable font support
-            let glyph_info = if let Some(cached) = self.atlas.get_glyph_info_with_weight(0, glyph_id, size_px as u32, weight_key) {
+            let glyph_info = if let Some(cached) = self.atlas.get_glyph_info_with_weight(
+                actual_font_id, actual_glyph_id, size_px as u32, weight_key
+            ) {
                 cached
             } else {
                 // Generate and cache
-                if let Some(font) = &mut self.font {
-                    let (bitmap, w, h, xmin, ymin) = font.generate_sdf(glyph_id, size_px, weight);
-                    
+                let sdf_result = if let Some(fb_idx) = font_wrapper_idx {
+                    // Use fallback font
+                    if let Some(fb_font) = self.fallback_fonts.get_mut(fb_idx) {
+                        Some(fb_font.generate_sdf(actual_glyph_id, size_px, weight))
+                    } else {
+                        None
+                    }
+                } else {
+                    // Use primary font
+                    if let Some(font) = &mut self.font {
+                        Some(font.generate_sdf(actual_glyph_id, size_px, weight))
+                    } else {
+                        None
+                    }
+                };
+                
+                if let Some((bitmap, w, h, xmin, ymin)) = sdf_result {
                     if w > 0 && h > 0 {
-                         if let Some(alloc_rect) = self.atlas.allocate(w, h) {
-                            // Store the bitmap data for later upload to GPU
+                        if let Some(alloc_rect) = self.atlas.allocate(w, h) {
                             self.pending_uploads.push(PendingUpload {
                                 x: alloc_rect.x,
                                 y: alloc_rect.y,
@@ -152,33 +226,35 @@ impl TextEngine {
                                 x_bearing: xmin,
                                 y_bearing: ymin,
                             };
-                            self.atlas.cache_glyph_with_weight(0, glyph_id, size_px as u32, weight_key, info);
+                            self.atlas.cache_glyph_with_weight(
+                                actual_font_id, actual_glyph_id, size_px as u32, weight_key, info
+                            );
                             info
                         } else {
-                             // Atlas full!
-                             crate::atlas::GlyphInfo {
-                                 rect: Rect { x: 0, y: 0, width: 0, height: 0 },
-                                 x_bearing: 0.0,
-                                 y_bearing: 0.0,
-                             }
+                            crate::atlas::GlyphInfo {
+                                rect: Rect { x: 0, y: 0, width: 0, height: 0 },
+                                x_bearing: 0.0,
+                                y_bearing: 0.0,
+                            }
                         }
                     } else {
-                         crate::atlas::GlyphInfo {
-                             rect: Rect { x: 0, y: 0, width: 0, height: 0 },
-                             x_bearing: xmin,
-                             y_bearing: ymin,
-                         }
+                        crate::atlas::GlyphInfo {
+                            rect: Rect { x: 0, y: 0, width: 0, height: 0 },
+                            x_bearing: xmin,
+                            y_bearing: ymin,
+                        }
                     }
                 } else {
-                     crate::atlas::GlyphInfo {
-                         rect: Rect { x: 0, y: 0, width: 0, height: 0 },
-                         x_bearing: 0.0,
-                         y_bearing: 0.0,
-                     }
+                    crate::atlas::GlyphInfo {
+                        rect: Rect { x: 0, y: 0, width: 0, height: 0 },
+                        x_bearing: 0.0,
+                        y_bearing: 0.0,
+                    }
                 }
             };
 
-            ids.push(glyph_id);
+            ids.push(actual_glyph_id);
+            font_indices.push(actual_font_id as u8);
             
             // Calculate final position (relative to baseline)
             let x_pos = x_cursor + (gp.x_offset as f32 * scale);
@@ -206,6 +282,7 @@ impl TextEngine {
             positions: pos,
             atlas_rects: rects,
             glyph_offsets: offsets,
+            font_indices,
             total_width: x_cursor,
             total_height: face.height() as f32 * scale,
             ascent: face.ascender() as f32 * scale,

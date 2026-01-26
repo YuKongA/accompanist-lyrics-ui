@@ -26,9 +26,28 @@ actual class SdfAtlasManager actual constructor(
     private var isDirty = true
     private var hasAnyData = false
     
+    // Native text engine for font loading
+    private val nativeEngine = NativeTextEngine()
+    
+    init {
+        nativeEngine.init(atlasWidth, atlasHeight)
+    }
+    
     // SDF rendering parameters
     private val sdfThreshold = 0.5f  // Edge threshold
     private val sdfSmoothing = 0.02f  // Anti-aliasing width (smaller = sharper edges)
+    
+    actual fun loadFont(fontBytes: ByteArray) {
+        nativeEngine.loadFont(fontBytes)
+    }
+    
+    actual fun loadFallbackFont(fontBytes: ByteArray) {
+        nativeEngine.loadFallbackFont(fontBytes)
+    }
+    
+    actual fun clearFallbackFonts() {
+        nativeEngine.clearFallbackFonts()
+    }
     
     actual fun updateAtlas(uploads: List<GlyphUpload>) {
         if (uploads.isEmpty()) return
@@ -121,5 +140,6 @@ actual class SdfAtlasManager actual constructor(
         atlasBitmap.recycle()
         atlasImageBitmap = null
         hasAnyData = false
+        nativeEngine.destroy()
     }
 }
