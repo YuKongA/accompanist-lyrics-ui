@@ -71,8 +71,10 @@ actual fun getFontBytes(fontFamily: FontFamily?, platformContext: Any?): ByteArr
  *
  * This uses dynamic discovery via SystemFonts API - no hardcoded font names.
  */
-actual fun getSystemFallbackFontBytes(platformContext: Any?): List<ByteArray> {
-    return getSystemFallbackFontFiles().mapNotNull { file ->
+private val cachedSystemFallbackFonts: List<ByteArray> by lazy {
+    android.util.Log.d("FontFallback", "Initializing global fallback font cache...")
+    val start = System.currentTimeMillis()
+    val fonts = getSystemFallbackFontFiles().mapNotNull { file ->
         try {
             file.readBytes()
         } catch (e: Exception) {
@@ -80,6 +82,17 @@ actual fun getSystemFallbackFontBytes(platformContext: Any?): List<ByteArray> {
             null
         }
     }
+    android.util.Log.d("FontFallback", "Cached ${fonts.size} fallback fonts in ${System.currentTimeMillis() - start}ms")
+    fonts
+}
+
+/**
+ * Get system fallback font files for missing glyphs.
+ * Returns fonts in priority order.
+ * Cached globally to avoid repeated IO and parsing.
+ */
+actual fun getSystemFallbackFontBytes(platformContext: Any?): List<ByteArray> {
+    return cachedSystemFallbackFonts
 }
 
 /**

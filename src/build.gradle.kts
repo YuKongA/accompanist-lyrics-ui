@@ -23,6 +23,13 @@ kotlin {
 
         minSdk = 29
 
+        optimization {
+            consumerKeepRules.apply {
+                publish = true
+                file("consumer-rules.pro")
+            }
+        }
+        
         withJava()
         withHostTestBuilder {}.configure {}
         withDeviceTestBuilder {
