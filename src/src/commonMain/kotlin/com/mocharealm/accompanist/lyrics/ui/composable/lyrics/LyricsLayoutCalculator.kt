@@ -31,7 +31,8 @@ data class SyllableLayout(
     val charOriginalBounds: List<Rect>? = null,
     val firstBaseline: Float = 0f,
     val path: Path, // Main path for the syllable
-    val charPaths: List<Path>? = null // Paths for individual characters if awesome animation is used
+    val charPaths: List<Path>? = null, // Paths for individual characters if awesome animation is used
+    val floatEndingTime: Long = 0L // Calculated time when float animation should end
 )
 
 @Stable
@@ -85,7 +86,7 @@ fun measureSyllablesAndDetermineAnimation(
     val words = groupIntoWords(syllables)
     val fastCharAnimationThresholdMs = 200f
 
-    return words.flatMapIndexed { wordIndex, word ->
+    val initialLayouts = words.flatMapIndexed { wordIndex, word ->
         val wordContent = word.joinToString("") { it.content }
         val wordDuration = if (word.isNotEmpty()) word.last().end - word.first().start else 0
         val perCharDuration = if (wordContent.isNotEmpty() && wordDuration > 0) {
@@ -159,6 +160,52 @@ fun measureSyllablesAndDetermineAnimation(
                 charPaths = charPaths
             )
         }
+    }
+
+    // --- Post-processing: Calculate floatEndingTime ---
+    val n = initialLayouts.size
+    if (n == 0) return emptyList()
+
+    val floatEndTimes = LongArray(n)
+    val lineEndTime = initialLayouts.last().syllable.end.toLong()
+
+    // 1. Initial Pass: Set based on self-properties and next-is-awesome constraints
+    for (i in 0 until n) {
+        val layout = initialLayouts[i]
+        // Default: start + 700ms, constrained by line end
+        var endTime = (layout.syllable.start + 700).coerceAtMost(lineEndTime.toInt()).toLong()
+
+        // Constraint: If next syllable is Awesome, this one must finish before next starts
+        if (i + 1 < n) {
+            val nextLayout = initialLayouts[i + 1]
+            if (nextLayout.useAwesomeAnimation) {
+                // Determine effective start time of the next awesome animation
+                // For awesome animation, the word starts, but characters animate based on internal timing.
+                // Safest rule: Finish before the word start time.
+                val nextStartTime = nextLayout.syllable.start.toLong()
+                if (endTime > nextStartTime) {
+                    endTime = nextStartTime
+                }
+            }
+        }
+        floatEndTimes[i] = endTime
+    }
+
+    // 2. Backward Pass: Propagate constraints for non-awesome predecessors
+    // If layout[i] is effectively constrained by layout[i+1], then layout[i] needs to finish no later than layout[i+1]
+    // ONLY if layout[i+1] itself is a standard float animation.
+    // If layout[i+1] is awesome, we already handled it in Pass 1.
+    for (i in n - 2 downTo 0) {
+        val nextLayout = initialLayouts[i + 1]
+        if (!nextLayout.useAwesomeAnimation) {
+             if (floatEndTimes[i] > floatEndTimes[i+1]) {
+                 floatEndTimes[i] = floatEndTimes[i+1]
+             }
+        }
+    }
+
+    return initialLayouts.mapIndexed { index, layout ->
+        layout.copy(floatEndingTime = floatEndTimes[index])
     }
 }
 

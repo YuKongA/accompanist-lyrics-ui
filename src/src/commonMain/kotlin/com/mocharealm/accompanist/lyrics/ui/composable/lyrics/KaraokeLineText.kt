@@ -272,7 +272,7 @@ private fun DrawScope.drawRowText(
                 syllableLayout
             }
 
-            val animationFixedDuration = 700f
+            val animationFixedDuration = (driverLayout.floatEndingTime - driverLayout.syllable.start).toFloat().coerceAtLeast(1f)
             val timeSinceStart = currentTimeMs - driverLayout.syllable.start
             val animationProgress = (timeSinceStart / animationFixedDuration).coerceIn(0f, 1f)
 
