@@ -82,8 +82,8 @@ actual class SdfAtlasManager actual constructor(
                     normalPixels[i] = (normalA shl 24) or (r shl 16) or (g shl 8) or b
                     
                     // Shadow: Smoothstep falloff using full SDF range
-                    val shadowOuterEdge = 0.0f   // Shadow fades to 0 at buffer edge
-                    val shadowInnerEdge = 0.7f   // Shadow starts at text edge (= sdfThreshold)
+                    val shadowOuterEdge = 0.4f
+                    val shadowInnerEdge = sdfThreshold
                     val shadowAlpha = when {
                         sdfValue >= shadowInnerEdge -> 0f  // Inside text - covered by text layer
                         sdfValue <= shadowOuterEdge -> 0f  // At buffer edge

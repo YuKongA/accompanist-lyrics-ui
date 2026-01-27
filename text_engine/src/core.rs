@@ -299,6 +299,7 @@ impl TextEngine {
                                     rect: alloc_rect,
                                     x_bearing: xmin,
                                     y_bearing: ymin,
+                                    last_used: 0,  // Will be set by cache_glyph_with_weight
                                 };
                                 self.atlas.cache_glyph_with_weight(
                                     font_idx, glyph_id, size_px as u32, weight_key, info
@@ -307,19 +308,19 @@ impl TextEngine {
                             } else {
                                 crate::atlas::GlyphInfo {
                                     rect: Rect { x: 0, y: 0, width: 0, height: 0 },
-                                    x_bearing: 0.0, y_bearing: 0.0,
+                                    x_bearing: 0.0, y_bearing: 0.0, last_used: 0,
                                 }
                             }
                         } else {
                             crate::atlas::GlyphInfo {
                                 rect: Rect { x: 0, y: 0, width: 0, height: 0 },
-                                x_bearing: xmin, y_bearing: ymin,
+                                x_bearing: xmin, y_bearing: ymin, last_used: 0,
                             }
                         }
                     } else {
                         crate::atlas::GlyphInfo {
                             rect: Rect { x: 0, y: 0, width: 0, height: 0 },
-                            x_bearing: 0.0, y_bearing: 0.0,
+                            x_bearing: 0.0, y_bearing: 0.0, last_used: 0,
                         }
                     }
                 };
