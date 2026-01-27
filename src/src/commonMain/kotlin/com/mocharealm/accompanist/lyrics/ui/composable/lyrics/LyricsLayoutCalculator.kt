@@ -150,14 +150,9 @@ fun groupIntoWords(syllables: List<KaraokeSyllable>): List<List<KaraokeSyllable>
     return words
 }
 
-
-
-// Note: Changed TextMeasurer to NativeTextEngine usage logic
 fun measureSyllablesAndDetermineAnimation(
     syllables: List<KaraokeSyllable>,
-    textMeasurer: TextMeasurer, // Keeping for compatibility of signature, but ignoring? Or use as fallback?
-    // User requested replacement. I'll rely on global engine or add arg if possible.
-    // I will Assume Global NativeTextEngine or context passed is NativeTextEngine.
+    textMeasurer: TextMeasurer,
     style: TextStyle,
     isAccompanimentLine: Boolean,
     spaceWidth: Float,
