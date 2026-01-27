@@ -2,6 +2,16 @@ import com.android.build.api.dsl.androidLibrary
 import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.KotlinMultiplatform
 import org.gradle.kotlin.dsl.support.serviceOf
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileSystemOperations
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
+import org.gradle.process.ExecOperations
+import javax.inject.Inject
 
 plugins {
     alias(libs.plugins.jetbrains.kotlin.multiplatform)
@@ -9,14 +19,23 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.maven.publish)
+    alias(libs.plugins.dokka)
 }
 
-val rustProjectDir = File(rootDir, "text_engine")
-val libName = "text_engine"
-val jniLibsDir = File(projectDir, "src/androidMain/jniLibs")
-val execOps = project.serviceOf<ExecOperations>()
+val rustDir = layout.projectDirectory.dir("../text_engine")
+val rustLibName = "text_engine"
 
 kotlin {
+    5
+    targets.all {
+        compilations.all {
+            compileTaskProvider.configure {
+                compilerOptions {
+                    freeCompilerArgs.add("-Xexpect-actual-classes")
+                }
+            }
+        }
+    }
     androidLibrary {
         namespace = "com.mocharealm.accompanist.lyrics.ui"
         compileSdk = 36
@@ -29,7 +48,7 @@ kotlin {
                 file("consumer-rules.pro")
             }
         }
-        
+
         withJava()
         withHostTestBuilder {}.configure {}
         withDeviceTestBuilder {
@@ -43,30 +62,19 @@ kotlin {
         }
     }
     jvm()
-
-    val appleTargets = listOf(
-        iosArm64(),
-        iosSimulatorArm64(),
-        macosArm64()
-    )
-    appleTargets.forEach { target ->
-        target.compilations.getByName("main") {
-            val myInterop by cinterops.creating {
-                defFile(project.file("src/nativeInterop/cinterop/$libName.def"))
-                packageName = "com.mocharealm.accompanist.lyrics.ui.native"
-            }
-        }
-
-        // 告诉链接器去哪里找编译好的 .a 文件
-        target.binaries.all {
-            val rustTarget = when (target.name) {
-                "iosArm64" -> "aarch64-apple-ios"
-                "iosSimulatorArm64" -> "aarch64-apple-ios-sim"
-                "macosArm64" -> "aarch64-apple-darwin"
-                else -> ""
-            }
-            if (rustTarget.isNotEmpty()) {
-                linkerOpts("-L${rustProjectDir.absolutePath}/target/$rustTarget/release", "-l$libName")
+    val isMac = org.gradle.internal.os.OperatingSystem.current().isMacOsX
+    if (isMac) {
+        val appleTargets = listOf(
+            iosArm64(),
+            iosSimulatorArm64(),
+            macosArm64()
+        )
+        appleTargets.forEach { target ->
+            target.compilations.getByName("main") {
+                val myInterop by cinterops.creating {
+                    defFile(project.file("src/nativeInterop/cinterop/$rustLibName.def"))
+                    packageName = "com.mocharealm.accompanist.lyrics.ui.native"
+                }
             }
         }
     }
@@ -106,7 +114,7 @@ mavenPublishing {
 
     configure(
         KotlinMultiplatform(
-            javadocJar = JavadocJar.Empty(),
+            javadocJar = JavadocJar.Dokka("dokkaGeneratePublicationHtml"),
             sourcesJar = true
         )
     )
@@ -143,83 +151,197 @@ mavenPublishing {
 }
 
 composeCompiler {
-    stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose-compiler-config.conf"))
+    val configFile = project.layout.projectDirectory.file("compose-compiler-config.conf")
+    if (configFile.asFile.exists()) {
+        stabilityConfigurationFiles.add(configFile)
+    }
 }
 
-// Android
-val buildRustAndroid = tasks.register("buildRustAndroid") {
-    doLast {
+abstract class BuildRustAndroidTask @Inject constructor(
+    private val execOps: ExecOperations,
+    private val fs: FileSystemOperations
+) : DefaultTask() {
+    @get:InputDirectory
+    abstract val rustProjectDir: DirectoryProperty
+
+    @get:Input
+    abstract val libName: Property<String>
+
+    @get:OutputDirectory
+    abstract val jniLibsDir: DirectoryProperty
+
+    @TaskAction
+    fun build() {
         val abiMap = mapOf(
             "arm64-v8a" to "aarch64-linux-android",
             "x86_64" to "x86_64-linux-android",
             "armeabi-v7a" to "armv7-linux-androideabi"
         )
+
         abiMap.forEach { (abi, target) ->
-            // 显式调用 project.exec
+            // Ensure output directory exists
+            val outputDir = jniLibsDir.get().dir(abi).asFile
+            if (!outputDir.exists()) {
+                outputDir.mkdirs()
+            }
+
             execOps.exec {
-                workingDir = rustProjectDir
+                workingDir = rustProjectDir.get().asFile
                 commandLine("cargo", "ndk", "-t", abi, "build", "--release")
             }.assertNormalExitValue()
 
-            copy {
-                from("${rustProjectDir.absolutePath}/target/$target/release/lib$libName.so")
-                into("${projectDir}/src/androidMain/jniLibs/$abi")
+            fs.copy {
+                from(rustProjectDir.get().dir("target/$target/release"))
+                include("lib${libName.get()}.so")
+                into(jniLibsDir.get().dir(abi))
             }
         }
     }
 }
 
-// Apple 编译任务
-val buildRustApple = tasks.register("buildRustApple") {
-    doLast {
+abstract class BuildRustJvmTask @Inject constructor(
+    private val execOps: ExecOperations,
+    private val fs: FileSystemOperations
+) : DefaultTask() {
+    @get:InputDirectory
+    abstract val rustProjectDir: DirectoryProperty
+
+    @get:Input
+    abstract val libName: Property<String>
+
+    @get:OutputDirectory
+    abstract val resourcesDir: DirectoryProperty
+
+    @TaskAction
+    fun build() {
+        execOps.exec {
+            workingDir = rustProjectDir.get().asFile
+            commandLine("cargo", "build", "--release")
+        }.assertNormalExitValue()
+
+        val osName = System.getProperty("os.name").lowercase()
+        val (ext, prefix) = when {
+            osName.contains("win") -> "dll" to ""
+            osName.contains("mac") -> "dylib" to "lib"
+            else -> "so" to "lib"
+        }
+
+        // Ensure output directory exists
+        val outputDir = resourcesDir.get().dir("natives").asFile
+        if (!outputDir.exists()) {
+            outputDir.mkdirs()
+        }
+
+        fs.copy {
+            from(rustProjectDir.get().dir("target/release"))
+            include("$prefix${libName.get()}.$ext")
+            into(resourcesDir.get().dir("natives"))
+        }
+    }
+}
+
+abstract class BuildRustAppleTask @Inject constructor(
+    private val execOps: ExecOperations
+) : DefaultTask() {
+    @get:InputDirectory
+    abstract val rustProjectDir: DirectoryProperty
+
+    @get:Input
+    abstract val libName: Property<String>
+
+    @get:OutputDirectory
+    abstract val headerOutputDir: DirectoryProperty
+
+    @TaskAction
+    fun build() {
         val appleTargets = listOf(
             "aarch64-apple-ios",
             "aarch64-apple-ios-sim",
             "aarch64-apple-darwin"
         )
+
+        // 1. Compile static libraries for each platform
         appleTargets.forEach { target ->
             execOps.exec {
-                workingDir = rustProjectDir
+                workingDir = rustProjectDir.get().asFile
                 commandLine("cargo", "build", "--target", target, "--release")
             }.assertNormalExitValue()
         }
 
-        // 确保目录存在
-        val interopDir = File(projectDir, "src/nativeInterop/cinterop")
-        if (!interopDir.exists()) interopDir.mkdirs()
+        // 2. Generate C header interface
+        val headerOut = headerOutputDir.get().asFile
+        if (!headerOut.exists()) {
+            headerOut.mkdirs()
+        }
+        val headerFile = headerOutputDir.get().file("${libName.get()}.h").asFile
 
         execOps.exec {
-            workingDir = rustProjectDir
-            commandLine("cbindgen", "--config", "cbindgen.toml", "--crate", libName, "--output", "${interopDir.absolutePath}/$libName.h")
+            workingDir = rustProjectDir.get().asFile
+            commandLine(
+                "cbindgen",
+                "--config", "cbindgen.toml",
+                "--crate", libName.get(),
+                "--output", headerFile.absolutePath
+            )
         }.assertNormalExitValue()
     }
 }
 
-val buildRustJvm = tasks.register("buildRustJvm") {
-    group = "rust"
-    doLast {
-        // 根据当前机器系统编译
-        execOps.exec {
-            workingDir = rustProjectDir
-            commandLine("cargo", "build", "--release")
-        }
-
-        val osName = System.getProperty("os.name").lowercase()
-        val ext = when {
-            osName.contains("win") -> "dll"
-            osName.contains("mac") -> "dylib"
-            else -> "so"
-        }
-
-        // 将库拷贝到 jvmMain 的资源目录中
-        copy {
-            from("${rustProjectDir.absolutePath}/target/release/lib$libName.$ext")
-            into("${projectDir}/src/jvmMain/resources/natives")
-        }
-    }
+val buildRustAndroid = tasks.register<BuildRustAndroidTask>("buildRustAndroid") {
+    rustProjectDir.set(rustDir)
+    libName.set(rustLibName)
+    jniLibsDir.set(layout.projectDirectory.dir("src/androidMain/jniLibs"))
 }
 
-// 确保在处理资源前先编译 Rust
+val buildRustJvm = tasks.register<BuildRustJvmTask>("buildRustJvm") {
+    rustProjectDir.set(rustDir)
+    libName.set(rustLibName)
+    resourcesDir.set(layout.projectDirectory.dir("src/jvmMain/resources"))
+}
+
+val buildRustApple = tasks.register<BuildRustAppleTask>("buildRustApple") {
+    // Run only on macOS
+    onlyIf { org.gradle.internal.os.OperatingSystem.current().isMacOsX }
+
+    rustProjectDir.set(rustDir)
+    libName.set(rustLibName)
+    // Output to the standard cinterop directory
+    headerOutputDir.set(layout.projectDirectory.dir("src/nativeInterop/cinterop"))
+}
+
+tasks.matching { it.name.contains("preBuild", ignoreCase = true) }.configureEach {
+    dependsOn(buildRustAndroid)
+}
+
 tasks.named("jvmProcessResources") {
     dependsOn(buildRustJvm)
+}
+
+tasks.named<Delete>("clean") {
+    delete(
+        layout.projectDirectory.dir("src/androidMain/jniLibs"),
+        layout.projectDirectory.dir("src/jvmMain/resources/natives"),
+        layout.projectDirectory.dir("src/nativeInterop/cinterop")
+    )
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinNativeCompile>().configureEach {
+    dependsOn(buildRustApple)
+}
+
+kotlin.targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget> {
+    binaries.all {
+        val rustTarget = when (konanTarget.name) {
+            "ios_arm64" -> "aarch64-apple-ios"
+            "ios_simulator_arm64" -> "aarch64-apple-ios-sim"
+            "macos_arm64" -> "aarch64-apple-darwin"
+            else -> null
+        }
+
+        rustTarget?.let {
+            // Use relative path or provider to be configuration-cache friendly
+            val rustLibDir = rustDir.dir("target/$it/release").asFile.absolutePath
+            linkerOpts("-L$rustLibDir", "-l$rustLibName")
+        }
+    }
 }

@@ -9,4 +9,4 @@ plugins {
     alias(libs.plugins.stability.analyzer) apply false
 }
 
-version = "1.0.16"
+version = "1.0.17"
