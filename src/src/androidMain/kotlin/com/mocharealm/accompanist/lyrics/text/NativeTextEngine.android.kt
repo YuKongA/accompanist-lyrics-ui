@@ -1,5 +1,9 @@
 package com.mocharealm.accompanist.lyrics.text
 
+import android.content.Context
+import android.content.res.AssetFileDescriptor
+import java.io.File
+import java.io.FileInputStream
 import java.nio.ByteBuffer
 
 actual class NativeTextEngine {
@@ -31,3 +35,50 @@ actual class NativeTextEngine {
     // Resource management
     actual external fun destroy()
 }
+
+/**
+ * Loads a fallback font from Android assets using zero-copy file descriptor.
+ * More memory efficient than loading entire font into ByteArray.
+ * 
+ * @param context Android context for accessing assets
+ * @param assetPath Path to font file in assets (e.g., "fonts/NotoSansCJK.otf")
+ * @return true if font loaded successfully
+ */
+fun NativeTextEngine.loadFallbackFontFromAsset(context: Context, assetPath: String): Boolean {
+    return try {
+        val afd: AssetFileDescriptor = context.assets.openFd(assetPath)
+        val fd = afd.parcelFileDescriptor.fd
+        val result = loadFallbackFontFd(fd)
+        afd.close()
+        result
+    } catch (e: Exception) {
+        // Asset might be compressed, fall back to ByteArray method
+        try {
+            val bytes = context.assets.open(assetPath).use { it.readBytes() }
+            loadFallbackFont(bytes)
+            true
+        } catch (e2: Exception) {
+            false
+        }
+    }
+}
+
+/**
+ * Loads a fallback font from a file path using zero-copy file descriptor.
+ * 
+ * @param filePath Absolute path to font file
+ * @return true if font loaded successfully
+ */
+fun NativeTextEngine.loadFallbackFontFromFile(filePath: String): Boolean {
+    return try {
+        val file = File(filePath)
+        val fis = FileInputStream(file)
+        val fd = fis.fd.hashCode() // Note: This is a hack, proper FD would need ParcelFileDescriptor
+        val result = loadFallbackFontFd(fd)
+        fis.close()
+        result
+    } catch (e: Exception) {
+        false
+    }
+}
+

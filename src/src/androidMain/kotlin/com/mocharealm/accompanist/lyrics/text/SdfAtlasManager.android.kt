@@ -67,34 +67,18 @@ actual class SdfAtlasManager actual constructor(
             for (i in normalPixels.indices) {
                 val offset = i * 4
                 if (offset + 3 < data.size) {
+                    // Rust now provides pre-processed alpha:
+                    // R = 255 (white), G = shadow alpha, B = 255 (white), A = normal alpha
                     val r = data[offset].toInt() and 0xFF
-                    val g = data[offset + 1].toInt() and 0xFF
+                    val shadowA = data[offset + 1].toInt() and 0xFF
                     val b = data[offset + 2].toInt() and 0xFF
-                    val sdfValue = (data[offset + 3].toInt() and 0xFF) / 255f
+                    val normalA = data[offset + 3].toInt() and 0xFF
                     
-                    // Normal text: Apply smoothstep with standard threshold (0.7)
-                    val normalAlpha = smoothstep(
-                        sdfThreshold - sdfSmoothing,
-                        sdfThreshold + sdfSmoothing,
-                        sdfValue
-                    )
-                    val normalA = (normalAlpha * 255f).toInt().coerceIn(0, 255)
-                    normalPixels[i] = (normalA shl 24) or (r shl 16) or (g shl 8) or b
+                    // Normal atlas: use A channel directly
+                    normalPixels[i] = (normalA shl 24) or (r shl 16) or (r shl 8) or r
                     
-                    // Shadow: Smoothstep falloff using full SDF range
-                    val shadowOuterEdge = 0.4f
-                    val shadowInnerEdge = sdfThreshold
-                    val shadowAlpha = when {
-                        sdfValue >= shadowInnerEdge -> 0f  // Inside text - covered by text layer
-                        sdfValue <= shadowOuterEdge -> 0f  // At buffer edge
-                        else -> {
-                            // Smoothstep from outer edge to inner edge
-                            val t = (sdfValue - shadowOuterEdge) / (shadowInnerEdge - shadowOuterEdge)
-                            t * t * (3f - 2f * t)  // smoothstep
-                        }
-                    }
-                    val shadowA = (shadowAlpha * 255f).toInt().coerceIn(0, 255)
-                    shadowPixels[i] = (shadowA shl 24) or (r shl 16) or (g shl 8) or b
+                    // Shadow atlas: use G channel for shadow alpha
+                    shadowPixels[i] = (shadowA shl 24) or (r shl 16) or (r shl 8) or r
                 }
             }
             

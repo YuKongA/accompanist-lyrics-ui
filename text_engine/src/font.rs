@@ -128,30 +128,56 @@ impl FontWrapper {
         let output_width = width + (SDF_BUFFER * 2);
         let output_height = height + (SDF_BUFFER * 2);
         
-        // Convert single-channel SDF to RGBA format
-        // SDF is stored in alpha channel, RGB is white for shader flexibility
+        // SDF processing parameters (matching Kotlin values)
+        const SDF_THRESHOLD: f32 = 0.7;
+        const SDF_SMOOTHING: f32 = 0.02;
+        const SHADOW_OUTER_EDGE: f32 = 0.4;
+        const SHADOW_INNER_EDGE: f32 = SDF_THRESHOLD;
+        
+        // Convert single-channel SDF to RGBA format with processing
+        // Normal: smoothstep around threshold
+        // Shadow: smoothstep falloff for glow
         let mut rgba_data = Vec::with_capacity(sdf_u8.len() * 4);
-        for &sdf_value in &sdf_u8 {
-            rgba_data.push(255);       // R - white
-            rgba_data.push(255);       // G - white  
-            rgba_data.push(255);       // B - white
-            rgba_data.push(sdf_value); // A - SDF value
+        for &sdf_byte in &sdf_u8 {
+            let sdf_value = sdf_byte as f32 / 255.0;
+            
+            // Normal text: smoothstep around threshold
+            let normal_alpha = smoothstep(
+                SDF_THRESHOLD - SDF_SMOOTHING,
+                SDF_THRESHOLD + SDF_SMOOTHING,
+                sdf_value
+            );
+            
+            // Shadow: smoothstep falloff
+            let shadow_alpha = if sdf_value >= SHADOW_INNER_EDGE {
+                0.0  // Inside text - covered by text layer
+            } else if sdf_value <= SHADOW_OUTER_EDGE {
+                0.0  // At buffer edge
+            } else {
+                let t = (sdf_value - SHADOW_OUTER_EDGE) / (SHADOW_INNER_EDGE - SHADOW_OUTER_EDGE);
+                t * t * (3.0 - 2.0 * t)  // smoothstep
+            };
+            
+            // Pack both alphas: normal in R channel, shadow in G channel
+            // RGB will be set to 255, actual color applied at draw time
+            // Using A channel for normal alpha (backward compatible)
+            rgba_data.push(255);  // R - white
+            rgba_data.push((shadow_alpha * 255.0) as u8);  // G - shadow alpha
+            rgba_data.push(255);  // B - white
+            rgba_data.push((normal_alpha * 255.0) as u8);  // A - normal alpha
         }
         
         // Bearing offsets from swash placement (already in pixels)
         // Adjust for SDF buffer padding
-        // 
-        // swash's placement.left/top are offsets from glyph origin to bitmap top-left corner.
-        // - left: horizontal offset (positive = right of origin)
-        // - top: vertical offset from baseline to TOP of bitmap (positive = above baseline)
-        //
-        // We return (xmin, ymin) where:
-        // - xmin = left bearing (offset from origin to left edge)
-        // - ymin = bottom bearing (offset from baseline to BOTTOM of bitmap)
-        //       = top - height (convert from top to bottom)
         let xmin = image.placement.left as f32 - SDF_BUFFER as f32;
         let ymin = (image.placement.top as i32 - height as i32) as f32 - SDF_BUFFER as f32;
         
         (rgba_data, output_width as u32, output_height as u32, xmin, ymin)
     }
+}
+
+/// Smoothstep function for smooth alpha transitions
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
 }
