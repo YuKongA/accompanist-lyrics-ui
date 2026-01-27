@@ -180,3 +180,39 @@ fun rememberSdfAtlasManager(atlasWidth: Int, atlasHeight: Int): SdfAtlasManager 
         SdfAtlasManager(atlasWidth, atlasHeight)
     }
 }
+
+/**
+ * Pre-caches printable ASCII characters (32-126) for faster rendering.
+ * Should be called during app initialization or when fonts are loaded.
+ * 
+ * @param nativeEngine The NativeTextEngine to use for glyph generation
+ * @param atlasManager The SdfAtlasManager to update with generated glyphs
+ * @param fontSize The font size in pixels to cache at
+ * @param fontWeight The font weight to use (default 400)
+ */
+suspend fun warmupAscii(
+    nativeEngine: NativeTextEngine,
+    atlasManager: SdfAtlasManager,
+    fontSize: Float,
+    fontWeight: Float = 400f
+) {
+    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        // ASCII printable characters: space (32) to tilde (126)
+        val asciiChars = (32..126).map { it.toChar() }.joinToString("")
+        
+        // Process all ASCII chars to generate glyphs
+        nativeEngine.processText(asciiChars, fontSize, fontWeight)
+        
+        // Upload pending glyphs to atlas
+        if (nativeEngine.hasPendingUploads()) {
+            val uploadsJson = nativeEngine.getPendingUploads()
+            val uploads = parsePendingUploads(uploadsJson)
+            if (uploads.isNotEmpty()) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    atlasManager.updateAtlas(uploads)
+                }
+            }
+        }
+    }
+}
+
