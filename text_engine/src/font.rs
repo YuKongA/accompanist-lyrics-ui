@@ -6,10 +6,10 @@ use sdf_glyph_renderer::{BitmapGlyph, clamp_to_u8};
 use memmap2::Mmap;
 use std::ops::Deref;
 
-/// Buffer size around the glyph for SDF spread
-const SDF_BUFFER: usize = 4;
-/// SDF radius (distance field cutoff)
-const SDF_RADIUS: usize = 8;
+/// Buffer size around the glyph for SDF spread (increased for shadow support)
+const SDF_BUFFER: usize = 16;
+/// SDF radius (distance field cutoff) - increased to match buffer for full shadow range
+const SDF_RADIUS: usize = 16;
 /// SDF cutoff for clamping to u8 (0.25 is standard for text rendering)
 const SDF_CUTOFF: f64 = 0.25;
 

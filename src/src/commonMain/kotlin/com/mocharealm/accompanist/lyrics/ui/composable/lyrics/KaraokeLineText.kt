@@ -239,12 +239,23 @@ private fun DrawScope.drawRowText(
                     scale(scale = scale, pivot = syllableLayout.wordPivot)
                     translate(left = xPos, top = yPos)
                 }) {
-                    // Draw glyph from atlas
+                    // Draw glyph from atlas with shadow
                     val glyphSize = Size(
                         singleCharLayoutResult.size.width.toFloat(),
                         singleCharLayoutResult.size.height.toFloat()
                     )
-                    drawGlyphsFromLayout(singleCharLayoutResult, Offset.Zero, drawColor, atlasManager)
+                    
+                    // Create shadow based on animation progress (same as original implementation)
+                    val blurRadius = 10f * Bounce.transform(awesomeProgress)
+                    val shadow = if (blurRadius > 0f) {
+                        Shadow(
+                            color = drawColor.copy(alpha = 0.4f),
+                            offset = Offset.Zero,
+                            blurRadius = blurRadius
+                        )
+                    } else null
+                    
+                    drawGlyphsFromLayout(singleCharLayoutResult, Offset.Zero, drawColor, atlasManager, shadow)
                     
                     if (showDebugRectangles) {
                         drawRect(
@@ -315,7 +326,8 @@ private fun DrawScope.drawGlyphsFromLayout(
     layout: NativeLayoutResult,
     baseOffset: Offset,
     color: Color,
-    atlasManager: SdfAtlasManager?
+    atlasManager: SdfAtlasManager?,
+    shadow: Shadow? = null
 ) {
     if (layout.glyph_count == 0) return
     
@@ -366,7 +378,7 @@ private fun DrawScope.drawGlyphsFromLayout(
         
         if (atlasManager != null && atlasManager.isReady()) {
             with(atlasManager) {
-                drawGlyph(atlasRect, destOffset, destSize, color)
+                drawGlyph(atlasRect, destOffset, destSize, color, shadow)
             }
         } else {
             // Fallback: draw colored rectangle if atlas is not ready

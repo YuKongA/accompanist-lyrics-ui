@@ -6,6 +6,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 
 /**
@@ -74,7 +75,8 @@ expect class SdfAtlasManager(atlasWidth: Int, atlasHeight: Int) {
         atlasRect: Rect,
         destOffset: Offset,
         destSize: Size,
-        color: Color
+        color: Color,
+        shadow: Shadow? = null
     )
     
     /**

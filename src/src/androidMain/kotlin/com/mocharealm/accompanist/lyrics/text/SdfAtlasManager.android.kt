@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.IntOffset
@@ -20,14 +21,19 @@ actual class SdfAtlasManager actual constructor(
     actual val width: Int = atlasWidth
     actual val height: Int = atlasHeight
     
-    // The atlas bitmap - ARGB_8888 format
+    // The atlas bitmap - ARGB_8888 format (for normal text rendering)
     private val atlasBitmap: Bitmap = Bitmap.createBitmap(atlasWidth, atlasHeight, Bitmap.Config.ARGB_8888)
     private var atlasImageBitmap: ImageBitmap? = null
+    
+    // Shadow atlas bitmap - uses lower threshold for softer, larger glow
+    private val shadowAtlasBitmap: Bitmap = Bitmap.createBitmap(atlasWidth, atlasHeight, Bitmap.Config.ARGB_8888)
+    private var shadowAtlasImageBitmap: ImageBitmap? = null
+    
     private var isDirty = true
     private var hasAnyData = false
     
-    // SDF rendering parameters
-    private val sdfThreshold = 0.7f  // Edge threshold
+    // SDF rendering parameters for normal text
+    private val sdfThreshold = 0.7f
     private val sdfSmoothing = 0.02f  // Anti-aliasing width (smaller = sharper edges)
     
     // Font loading is handled by the external NativeTextEngine
@@ -51,12 +57,14 @@ actual class SdfAtlasManager actual constructor(
             if (upload.width <= 0 || upload.height <= 0) continue
             if (upload.x + upload.width > width || upload.y + upload.height > height) continue
             
-            // Convert RGBA byte array to ARGB int array for Android Bitmap
-            // Apply SDF thresholding to sharpen the text
-            val pixels = IntArray(upload.width * upload.height)
             val data = upload.data
             
-            for (i in pixels.indices) {
+            // Create pixels for normal text atlas
+            val normalPixels = IntArray(upload.width * upload.height)
+            // Create pixels for shadow atlas
+            val shadowPixels = IntArray(upload.width * upload.height)
+            
+            for (i in normalPixels.indices) {
                 val offset = i * 4
                 if (offset + 3 < data.size) {
                     val r = data[offset].toInt() and 0xFF
@@ -64,22 +72,35 @@ actual class SdfAtlasManager actual constructor(
                     val b = data[offset + 2].toInt() and 0xFF
                     val sdfValue = (data[offset + 3].toInt() and 0xFF) / 255f
                     
-                    // Apply smoothstep for crisp edges with anti-aliasing
-                    val alpha = smoothstep(
+                    // Normal text: Apply smoothstep with standard threshold (0.7)
+                    val normalAlpha = smoothstep(
                         sdfThreshold - sdfSmoothing,
                         sdfThreshold + sdfSmoothing,
                         sdfValue
                     )
-                    val a = (alpha * 255f).toInt().coerceIn(0, 255)
+                    val normalA = (normalAlpha * 255f).toInt().coerceIn(0, 255)
+                    normalPixels[i] = (normalA shl 24) or (r shl 16) or (g shl 8) or b
                     
-                    // ARGB format for Android
-                    pixels[i] = (a shl 24) or (r shl 16) or (g shl 8) or b
+                    // Shadow: Smoothstep falloff using full SDF range
+                    val shadowOuterEdge = 0.4f
+                    val shadowInnerEdge = sdfThreshold
+                    val shadowAlpha = when {
+                        sdfValue >= shadowInnerEdge -> 0f  // Inside text - covered by text layer
+                        sdfValue <= shadowOuterEdge -> 0f  // At buffer edge
+                        else -> {
+                            // Smoothstep from outer edge to inner edge
+                            val t = (sdfValue - shadowOuterEdge) / (shadowInnerEdge - shadowOuterEdge)
+                            t * t * (3f - 2f * t)  // smoothstep
+                        }
+                    }
+                    val shadowA = (shadowAlpha * 255f).toInt().coerceIn(0, 255)
+                    shadowPixels[i] = (shadowA shl 24) or (r shl 16) or (g shl 8) or b
                 }
             }
             
-            // Set pixels to the atlas bitmap
+            // Set pixels to the normal atlas bitmap
             atlasBitmap.setPixels(
-                pixels,
+                normalPixels,
                 0,
                 upload.width,
                 upload.x,
@@ -87,6 +108,18 @@ actual class SdfAtlasManager actual constructor(
                 upload.width,
                 upload.height
             )
+            
+            // Set pixels to the shadow atlas bitmap
+            shadowAtlasBitmap.setPixels(
+                shadowPixels,
+                0,
+                upload.width,
+                upload.x,
+                upload.y,
+                upload.width,
+                upload.height
+            )
+            
             hasAnyData = true
         }
         
@@ -98,9 +131,10 @@ actual class SdfAtlasManager actual constructor(
         return t * t * (3f - 2f * t)
     }
     
-    private fun ensureImageBitmap() {
-        if (isDirty || atlasImageBitmap == null) {
+    private fun ensureImageBitmaps() {
+        if (isDirty || atlasImageBitmap == null || shadowAtlasImageBitmap == null) {
             atlasImageBitmap = atlasBitmap.asImageBitmap()
+            shadowAtlasImageBitmap = shadowAtlasBitmap.asImageBitmap()
             isDirty = false
         }
     }
@@ -109,16 +143,38 @@ actual class SdfAtlasManager actual constructor(
         atlasRect: Rect,
         destOffset: Offset,
         destSize: Size,
-        color: Color
+        color: Color,
+        shadow: Shadow?
     ) {
         if (!hasAnyData) return
         if (atlasRect.width <= 0 || atlasRect.height <= 0) return
         
-        ensureImageBitmap()
+        ensureImageBitmaps()
         val imageBitmap = atlasImageBitmap ?: return
         
-        // Draw the glyph with color tinting using SrcIn blend mode
-        // SrcIn uses the destination alpha (from atlas) and source color
+        // Draw shadow first if specified
+        if (shadow != null && shadow.blurRadius > 0f) {
+            val shadowImageBitmap = shadowAtlasImageBitmap ?: return
+            val shadowOffset = destOffset + shadow.offset
+            
+            // Apply blur radius as alpha threshold
+            // Higher blurRadius -> show more of the distance gradient
+            // blurRadius 0-20 maps to showing 0-100% of the gradient
+            // We apply this by modulating the shadow color's alpha
+            val blurIntensity = (shadow.blurRadius / 10f).coerceIn(0f, 1f)
+            val modulatedColor = shadow.color.copy(alpha = shadow.color.alpha * blurIntensity)
+            
+            drawImage(
+                image = shadowImageBitmap,
+                srcOffset = IntOffset(atlasRect.left.toInt(), atlasRect.top.toInt()),
+                srcSize = IntSize(atlasRect.width.toInt(), atlasRect.height.toInt()),
+                dstOffset = IntOffset(shadowOffset.x.toInt(), shadowOffset.y.toInt()),
+                dstSize = IntSize(destSize.width.toInt(), destSize.height.toInt()),
+                colorFilter = ColorFilter.tint(modulatedColor, BlendMode.SrcIn)
+            )
+        }
+        
+        // Draw normal text on top
         drawImage(
             image = imageBitmap,
             srcOffset = IntOffset(atlasRect.left.toInt(), atlasRect.top.toInt()),
@@ -133,7 +189,9 @@ actual class SdfAtlasManager actual constructor(
     
     actual fun destroy() {
         atlasBitmap.recycle()
+        shadowAtlasBitmap.recycle()
         atlasImageBitmap = null
+        shadowAtlasImageBitmap = null
         hasAnyData = false
     }
 }
